@@ -1,0 +1,32 @@
+---
+- name: "Partition the PV"
+  community.general.parted:
+    device: /dev/vdb
+    number: 2
+    label: gpt
+    state: present
+    part_start: 512MiB
+    part_end: 3000MiB
+- name: "Create Volume Group vg_data"
+  community.general.lvg:
+    vg: vg_data
+    pvs: /dev/vdb2
+- name: "Create Logical Volume lv_storage"
+  community.general.lvol:
+    vg: vg_data
+    lv: lv_storage
+    size: 2g
+- name: "Format lv_storage as XFS"
+  community.general.filesystem:
+    fstype: xfs
+    dev: /dev/vg_data/lv_storage
+- name: "Mount lv_storage at /mnt/data"
+  ansible.posix.mount:
+    path: /mnt/data
+    src: /dev/vg_data/lv_storage
+    fstype: "xfs"
+    state: mounted
+- name: "Install the DB"
+  ansible.builtin.package:
+    name: mariadb-server
+    state: present

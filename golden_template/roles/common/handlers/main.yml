@@ -1,0 +1,4 @@
+---
+- name: "Activate Swap"
+  ansible.builtin.command: swapon -a
+  changed_when: true

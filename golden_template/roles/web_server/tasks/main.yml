@@ -1,0 +1,27 @@
+---
+- name: "Ensure Apache is installed"
+  ansible.builtin.dnf:
+    name: httpd
+    state: present
+
+- name: "Deploy the custom index.html"
+  ansible.builtin.copy:
+    src: index.html
+    dest: /var/www/html/index.html
+    mode: '0644'
+
+- name: "Ensure Apache is enabled and running"
+  ansible.builtin.service:
+    name: httpd
+    state: started
+    enabled: true
+
+- name: "Allow http and https through the firewall"
+  ansible.posix.firewalld:
+    service: "{{ item }}"
+    state: enabled
+    permanent: true
+    immediate: true
+  loop:
+    - http
+    - https

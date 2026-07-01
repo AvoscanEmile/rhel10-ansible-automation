@@ -1,0 +1,110 @@
+---
+- name: "Ensure the SSH key is present"
+  ansible.posix.authorized_key:
+    user: red
+    state: present
+    key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+
+- name: "Ensure user 'red' has passwordless sudo"
+  ansible.builtin.copy:
+    content: "red ALL=(ALL) NOPASSWD: ALL"
+    dest: /etc/sudoers.d/red
+    mode: '0440'
+
+- name: "Configure Repositories"
+  ansible.builtin.yum_repository:
+    name: "{{ item.name }}"
+    description: "{{ item.desc }}"
+    baseurl: "{{ item.url }}"
+    enabled: true
+    gpgcheck: false
+  loop:
+    - { name: 'BaseOS', desc: 'CentOS 10 BaseOS', url: 'https://mirror.stream.centos.org/10-stream/BaseOS/x86_64/os/' }
+    - { name: 'AppStream', desc: 'CentOS 10 AppStream', url: 'https://mirror.stream.centos.org/10-stream/AppStream/x86_64/os/' }
+
+- name: "Install Required Packages"
+  ansible.builtin.package:
+    name: [vim, wget, git, firewalld]
+    state: present
+
+- name: "Security Baseline"
+  block:
+    - name: "Enable firewalld"
+      ansible.builtin.service:
+        name: firewalld
+        enabled: true
+        state: started
+    - name: "Ensure SELinux is enforcing"
+      ansible.posix.selinux:
+        state: enforcing
+        policy: targeted
+
+- name: "User Management"
+  block:
+    - name: "Create Group"
+      ansible.builtin.group:
+        name: sysops
+    - name: "Create Users"
+      ansible.builtin.user:
+        name: "{{ item }}"
+        group: sysops
+      loop: [user1, user2, user3]
+
+- name: "Deploy Global MOTD"
+  ansible.builtin.template:
+    src: motd.j2
+    dest: /etc/motd
+    mode: '0744'
+    owner: root
+    group: root
+
+- name: "Create the Swap Partition"
+  community.general.parted:
+    device: /dev/vdb
+    number: 1
+    part_start: 0%
+    part_end: 512MiB
+    label: gpt
+    state: present
+
+- name: "MkSwap the Partition"
+  community.general.filesystem:
+    dev: /dev/vdb1
+    fstype: swap
+    state: present
+
+- name: "Add the Swap Partition to fstab"
+  ansible.posix.mount:
+    path: none
+    src: /dev/vdb1
+    fstype: swap
+    opts: defaults
+    state: present
+  notify: "Activate Swap"
+
+- name: "Check if log backup already exists"
+  ansible.builtin.stat:
+    path: /root/logs_backup.tar.gz
+  register: common_log_backup_file
+
+- name: "Create an archive for /var/log"
+  community.general.archive:
+    format: gz
+    dest: /root/logs_backup.tar.gz
+    path: /var/log
+    owner: root
+    group: root
+    mode: '0770'
+  when: not common_log_backup_file.stat.exists
+
+- name: "Create cron job"
+  ansible.builtin.cron:
+    user: user1
+    state: present
+    minute: "*/5"
+    job: "/usr/bin/uptime"
+    name: "Cron job that runs uptime every five minutes"
+
+- name: "Display the kernel"
+  ansible.builtin.debug:
+    msg: "The kernel version is {{ ansible_facts['kernel'] }}"

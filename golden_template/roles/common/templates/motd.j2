@@ -1,0 +1,6 @@
+Welcome to the machine!
+This system is managed by Ansible.
+
+FQDN:        {{ ansible_facts['fqdn'] }}
+IP Address:  {{ ansible_facts['default_ipv4']['address'] }}
+OS Version:  {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}

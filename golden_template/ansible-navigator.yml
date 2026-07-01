@@ -1,0 +1,17 @@
+ansible-navigator:
+  ansible:
+    config:
+      path: ./ansible.cfg
+  execution-environment:
+    image: localhost/my-exam-ee:latest
+    enabled: True
+    pull:
+      policy: missing
+  mode: stdout
+  playbook-artifact:
+    enable: false
+  logging:
+    append: true
+    file: ./logs/ansible-navigator.log
+    level: warning
+

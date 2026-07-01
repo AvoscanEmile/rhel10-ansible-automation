@@ -1,0 +1,12 @@
+---
+- name: "Enterprise Infrastructure Playbook"
+  hosts: all
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: common
+    - role: db_server
+      when: "'database' in group_names"
+    - role: web_server
+      when: "'web' in group_names"
