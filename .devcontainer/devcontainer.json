@@ -25,5 +25,8 @@
     "--userns=host",
     "--hostname=Ansible",
     "--net=host"
+  ],
+  "mounts": [
+    "source=/srv/git,target=/srv/git,type=bind,Z"
   ]
 }
