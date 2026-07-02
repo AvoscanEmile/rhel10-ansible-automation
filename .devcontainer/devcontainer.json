@@ -6,7 +6,7 @@
     }
   },
   "image": "ghcr.io/ansible/community-ansible-dev-tools:latest",
-  "name": "ansible-dev-container-podman",
+  "name": "Ansible",
   "runArgs": [
     "--cap-add=CAP_MKNOD",
     "--cap-add=NET_ADMIN",
@@ -23,6 +23,7 @@
     "--security-opt",
     "unmask=/sys/fs/cgroup",
     "--userns=host",
-    "--hostname=ansible-dev-container"
+    "--hostname=Ansible",
+    "--net=host"
   ]
 }
