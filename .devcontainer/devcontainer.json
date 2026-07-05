@@ -22,11 +22,12 @@
     "apparmor=unconfined",
     "--security-opt",
     "unmask=/sys/fs/cgroup",
-    "--userns=host",
+    "--userns=keep-id",
     "--hostname=Ansible",
     "--net=host"
   ],
   "mounts": [
-    "source=/srv/git,target=/srv/git,type=bind,Z"
-  ]
+    "source=/srv/git,target=/srv/git,type=bind"
+  ],
+  "postCreateCommand": "mkdir -p /root/.ssh && echo -e 'Host 192.168.122.*\n\tStrictHostKeyChecking no\n\tUserKnownHostsFile /dev/null\n\tLogLevel ERROR' > /root/.ssh/config && chmod 600 /root/.ssh/config"
 }

@@ -1,0 +1,11 @@
+---
+- name: "My Site Playbook"
+  hosts: all
+  become: true
+  gather_facts: true
+  tasks:
+   - name: "Distribute SSH keys to all hosts"
+     ansible.posix.authorized_key:
+      user: red
+      state: present
+      key: "{{ lookup('file', 'keys/id_rsa.pub') }}"

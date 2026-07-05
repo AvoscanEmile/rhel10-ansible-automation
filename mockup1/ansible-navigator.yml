@@ -7,7 +7,7 @@ ansible-navigator:
   execution-environment:
     container-engine: auto
     enabled: True
-    image: quay.io/organization/custom-ee:latest
+    image: localhost/mockup-ee:latest
     pull:
       policy: missing
   logging:

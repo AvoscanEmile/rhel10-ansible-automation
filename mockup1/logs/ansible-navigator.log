@@ -1,0 +1,25 @@
+2026-07-05T10:49:39.512591+00:00 WARNING 'ansible_navigator.main' `config was normalized to SettingsEntryValue(default=<Constants.NOT_SET: 'Not set'>, current='/workspaces/RHCE/mockup1/ansible.cfg', schema_default=<Constants.NOT_SET: 'Not set'>, source=<Constants.USER_CFG: 'Settings file'>).
+2026-07-05T10:49:39.525802+00:00 WARNING 'ansible_navigator.image_manager.puller._log_message' Image inspection failed, image assumed to be corrupted or missing
+2026-07-05T10:49:39.525885+00:00 WARNING 'ansible_navigator.image_manager.puller._log_message' stdout: []
+
+2026-07-05T10:49:39.525907+00:00 WARNING 'ansible_navigator.image_manager.puller._log_message' stderr: Error: quay.io/organization/custom-ee:latest: image not known
+
+2026-07-05T10:49:40.437328+00:00 ERROR 'ansible_navigator.image_manager.puller._log_message' Execution environment pull failed
+2026-07-05T10:50:44.887397+00:00 WARNING 'ansible_navigator.main' `config was normalized to SettingsEntryValue(default=<Constants.NOT_SET: 'Not set'>, current='/workspaces/RHCE/mockup1/ansible.cfg', schema_default=<Constants.NOT_SET: 'Not set'>, source=<Constants.USER_CFG: 'Settings file'>).
+2026-07-05T10:50:44.905024+00:00 WARNING 'ansible_navigator.image_manager.puller._log_message' Image inspection failed, image assumed to be corrupted or missing
+2026-07-05T10:50:44.905115+00:00 WARNING 'ansible_navigator.image_manager.puller._log_message' stdout: []
+
+2026-07-05T10:50:44.905138+00:00 WARNING 'ansible_navigator.image_manager.puller._log_message' stderr: Error: quay.io/organization/custom-ee:latest: image not known
+
+2026-07-05T10:50:45.843704+00:00 ERROR 'ansible_navigator.image_manager.puller._log_message' Execution environment pull failed
+2026-07-05T10:51:55.202558+00:00 WARNING 'ansible_navigator.main' `config was normalized to SettingsEntryValue(default=<Constants.NOT_SET: 'Not set'>, current='/workspaces/RHCE/mockup1/ansible.cfg', schema_default=<Constants.NOT_SET: 'Not set'>, source=<Constants.USER_CFG: 'Settings file'>).
+2026-07-05T10:51:55.219236+00:00 WARNING 'ansible_navigator.image_manager.puller._log_message' Image inspection failed, image assumed to be corrupted or missing
+2026-07-05T10:51:55.219361+00:00 WARNING 'ansible_navigator.image_manager.puller._log_message' stdout: []
+
+2026-07-05T10:51:55.219405+00:00 WARNING 'ansible_navigator.image_manager.puller._log_message' stderr: Error: ghcr.io/ansible/creator-ee:v0.22.0: image not known
+
+2026-07-05T11:16:28.974355+00:00 WARNING 'ansible_navigator.main' `config was normalized to SettingsEntryValue(default=<Constants.NOT_SET: 'Not set'>, current='/workspaces/RHCE/mockup1/ansible.cfg', schema_default=<Constants.NOT_SET: 'Not set'>, source=<Constants.USER_CFG: 'Settings file'>).
+2026-07-05T11:31:17.943833+00:00 WARNING 'ansible_navigator.main' `config was normalized to SettingsEntryValue(default=<Constants.NOT_SET: 'Not set'>, current='/workspaces/RHCE/mockup1/ansible.cfg', schema_default=<Constants.NOT_SET: 'Not set'>, source=<Constants.USER_CFG: 'Settings file'>).
+2026-07-05T11:52:45.900696+00:00 WARNING 'ansible_navigator.main' `config was normalized to SettingsEntryValue(default=<Constants.NOT_SET: 'Not set'>, current='/workspaces/RHCE/mockup1/ansible.cfg', schema_default=<Constants.NOT_SET: 'Not set'>, source=<Constants.USER_CFG: 'Settings file'>).
+2026-07-05T11:53:17.468948+00:00 WARNING 'ansible_navigator.main' `config was normalized to SettingsEntryValue(default=<Constants.NOT_SET: 'Not set'>, current='/workspaces/RHCE/mockup1/ansible.cfg', schema_default=<Constants.NOT_SET: 'Not set'>, source=<Constants.USER_CFG: 'Settings file'>).
+2026-07-05T11:54:39.449915+00:00 WARNING 'ansible_navigator.main' `config was normalized to SettingsEntryValue(default=<Constants.NOT_SET: 'Not set'>, current='/workspaces/RHCE/mockup1/ansible.cfg', schema_default=<Constants.NOT_SET: 'Not set'>, source=<Constants.USER_CFG: 'Settings file'>).
