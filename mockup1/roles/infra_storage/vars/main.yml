@@ -1,0 +1,11 @@
+---
+infra_storage_layouts:
+  - device: "/dev/data_vg/app_lv"
+    fstype: "vfat"
+    mountpoint: "/mnt/vfat"
+  - device: "/dev/data_vg/sec_lv"
+    fstype: "ext4"
+    mountpoint: "/mnt/ext4"
+  - device: "/dev/data_vg/thi_lv"
+    fstype: "xfs"
+    mountpoint: "/mnt/storage"

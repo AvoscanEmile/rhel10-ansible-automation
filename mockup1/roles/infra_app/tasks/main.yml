@@ -1,0 +1,131 @@
+---
+- name: Ensure the sysadmins group exists
+  ansible.builtin.group:
+    name: sysadmins
+    state: present
+
+- name: Configure the deployer user with aging policies
+  ansible.builtin.user:
+    name: deployer
+    state: present
+    groups:
+      - sysadmins
+    append: true
+    password: "{{ 'SecureDeployer2026!' | password_hash('sha512') }}"
+    password_expire_max: 60
+    password_expire_warn: 14
+
+- name: Enforce specific umask system-wide
+  ansible.builtin.lineinfile:
+    path: /etc/profile
+    line: "umask 027"
+    state: present
+    insertafter: EOF
+
+- name: Lockdown of sshd_config ownership and permissions
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Setup passwordless sudo for sysadmins
+  ansible.builtin.template:
+    src: sysadmins_sudo.j2
+    dest: /etc/sudoers.d/sysadmins
+    owner: root
+    group: root
+    mode: '0440'
+
+- name: Locate rogue files lacking valid user
+  ansible.builtin.command: find /var/tmp -nouser
+  register: infra_app_rogue_files
+  changed_when: false
+  failed_when: false
+
+- name: Reassign found files to root
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+  loop: "{{ infra_app_rogue_files.stdout_lines }}"
+  when: infra_app_rogue_files.stdout_lines | length > 0
+
+- name: Configure journal to be persistent
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/journald.conf
+    line: 'Storage=persistent'
+    state: present
+    create: true
+    mode: '0644'
+    owner: root
+    group: root
+  notify: Restart journald service
+
+- name: Ensure Flatpak is present
+  ansible.builtin.package:
+    name: flatpak
+    state: present
+
+- name: Connect and configure the flathub remote repo
+  ansible.builtin.flatpak_remote:
+    name: flathub
+    state: present
+    method: system
+    flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
+
+- name: Deploy Emacs application via Flathub (Non-interactive)
+  ansible.builtin.command: flatpak install -y flathub org.gnu.emacs
+  register: infra_app_flatpak_result
+  changed_when: "'Installing' in infra_app_flatpak_result.stdout"
+
+- name: Ensure cron daemon package is present
+  ansible.builtin.dnf:
+    name: cronie
+    state: present
+
+- name: Ensure crond service is active
+  ansible.builtin.systemd_service:
+    name: crond
+    state: started
+    enabled: true
+
+- name: Create cron job to notify the journal every minute
+  ansible.builtin.cron:
+    name: "Journal notification from cron"
+    minute: "*"
+    job: 'logger -t cron-test "Hello, this message is from cron"'
+
+- name: Deploy systemd service unit for journal logging
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/journal-test.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Systemd Journal Notification Service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/bin/logger -t systemd-test "Hello, this message is from systemd"
+
+- name: Deploy systemd timer unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/journal-test.timer
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Trigger journal notification service every minute
+
+      [Timer]
+      OnCalendar=*:*
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
+
+- name: Reload systemd daemon and start the timer
+  ansible.builtin.systemd_service:
+    name: journal-test.timer
+    state: started
+    enabled: true
+    daemon_reload: true

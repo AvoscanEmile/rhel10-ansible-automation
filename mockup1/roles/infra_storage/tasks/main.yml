@@ -1,0 +1,130 @@
+---
+- name: Safe Block Storage and LVM Operations
+  block:
+    - name: Ensure GPT Partition Exists on /dev/vdb
+      ansible.builtin.parted:
+        device: /dev/vdb
+        label: gpt
+        number: 1
+        state: present
+        part_end: "100%"
+    - name: Create data_vg Volume Group
+      ansible.builtin.lvg:
+        vg: data_vg
+        pvs: /dev/vdb1
+    - name: Create app_lv logical Volume
+      ansible.builtin.lvol:
+        vg: data_vg
+        lv: app_lv
+        size: 2G
+    - name: Create sec_lv logical Volume
+      ansible.builtin.lvol:
+        vg: data_vg
+        lv: sec_lv
+        size: 500M
+    - name: Create thi_lv logical Volume
+      ansible.builtin.lvol:
+        vg: data_vg
+        lv: thi_lv
+        size: 300M
+    - name: Attempt Impossible LV extension (Forcing Failure)
+      ansible.builtin.lvol:
+        vg: data_vg
+        lv: app_lv
+        size: 500G
+        force: true
+  rescue:
+    - name: Catch extension failure and log debug message
+      ansible.builtin.debug:
+        msg: "LV extension failed due to insufficient storage space. Pivoting to swap allocation"
+    - name: Create swap_lv logical volume
+      ansible.builtin.lvol:
+        vg: data_vg
+        lv: swap_lv
+        size: 2G
+    - name: Format the swap logical volume
+      ansible.builtin.filesystem:
+        fstype: swap
+        dev: /dev/data_vg/swap_lv
+    - name: Ensure swap space is persistently mounted in /etc/fstab
+      ansible.posix.mount:
+        path: none
+        state: present
+        fstype: swap
+        opts: defaults
+        src: /dev/data_vg/swap_lv
+    - name: Activate the system swap space
+      ansible.builtin.command: swapon -a
+      changed_when: false
+  always:
+    - name: Enforce Storage Operation Baseline Status
+      ansible.builtin.debug:
+        msg: "Storage architecture block execution complete."
+- name: Ensure filesystems are formatted correctly
+  ansible.builtin.filesystem:
+    fstype: "{{ item.fstype }}"
+    dev: "{{ item.device }}"
+  loop: "{{ infra_storage_layouts }}"
+
+- name: Ensure block devices are persistently mounted
+  ansible.posix.mount:
+    path: "{{ item.mountpoint }}"
+    src: "{{ item.device }}"
+    fstype: "{{ item.fstype }}"
+    opts: defaults
+    state: mounted
+  loop: "{{ infra_storage_layouts }}"
+
+- name: Create release and backup directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /opt/app_data/releases/v1.0.1/
+    - /opt/app_data/backup
+
+- name: Copy local hostname to release directory as node_identity.txt
+  ansible.builtin.copy:
+    src: /etc/hostname
+    dest: /opt/app_data/releases/v1.0.1/node_identity.txt
+    mode: '0644'
+    remote_src: true
+
+- name: Remove any depecrated directory
+  ansible.builtin.file:
+    path: /opt/app_data/depecrated/
+    state: absent
+
+- name: Create soft symlink pointing to the active release
+  ansible.builtin.file:
+    src: /opt/app_data/releases/v1.0.1/
+    dest: /opt/app_data/current
+    state: link
+
+- name: Create a hard link mapping back to the identity file
+  ansible.builtin.file:
+    src: /opt/app_data/releases/v1.0.1/node_identity.txt
+    dest: /opt/app_data/backup/identity.hard
+    state: hard
+    mode: '0644'
+
+- name: Create an archive of /var/log/audit
+  ansible.builtin.archive:
+    path: /var/log/audit
+    dest: /mnt/storage/log_audit.tar.gz
+    format: gz
+    force_archive: true
+    mode: '0644'
+
+- name: Ensure the extracted_payload folder exists
+  ansible.builtin.file:
+    path: /mnt/storage/extracted_payload
+    mode: '0644'
+    state: directory
+
+- name: Unarchive the log_audit file into the extracted_payload folder
+  ansible.builtin.unarchive:
+    src: /mnt/storage/log_audit.tar.gz
+    dest: /mnt/storage/extracted_payload/
+    remote_src: true

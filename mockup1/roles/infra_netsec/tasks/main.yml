@@ -1,0 +1,158 @@
+---
+- name: Get primary MAC Address
+  ansible.builtin.set_fact:
+    infra_netsec_primary_mac_last_char: "{{ ansible_facts['enp1s0']['macaddress'][-1] }}"
+
+- name: Determine if the last character is an even number
+  ansible.builtin.set_fact:
+    infra_netsec_is_even_mac: "{{ infra_netsec_primary_mac_last_char is match('[02468]') }}"
+
+- name: Enforce Static IPs on secondary interface if MAC is even
+  ansible.builtin.nmcli:
+    conn_name: enp2s0
+    ifname: enp2s0
+    type: dummy
+    ip4: "10.11.12.50/24"
+    ip6: "2001:db8::50/64"
+    method6: manual
+    never_default4: true
+    state: present
+  when: infra_netsec_is_even_mac | bool
+  notify: Restart network interface
+
+- name: Enforce Default behaviour if not even.
+  ansible.builtin.nmcli:
+    conn_name: enp2s0
+    ifname: enp2s0
+    type: dummy
+    state: present
+  when: not (infra_netsec_is_even_mac | bool)
+  notify: Restart network interface
+
+- name: Distribute custom hosts file
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Append custom kernel parameters
+  ansible.builtin.lineinfile:
+    path: /etc/default/grub
+    regexp: '^(GRUB_CMDLINE_LINUX=".*)(?<!audit=1)"$'
+    line: '\1 audit=1"'
+    backrefs: true
+  register: infra_netsec_grub_result
+  notify: Rebuild GRUB file
+
+- name: Enforce multi-user.target via system symlink
+  ansible.builtin.file:
+    src: /usr/lib/systemd/system/multi-user.target
+    dest: /etc/systemd/system/default.target
+    state: link
+    force: true
+  when: infra_netsec_grub_result is succeeded
+
+- name: Ensure NFS and Autofs are installed
+  ansible.builtin.package:
+    name:
+      - nfs-utils
+      - autofs
+    state: present
+
+- name: Create mount directory
+  ansible.builtin.file:
+    state: directory
+    path: /mnt/backup_share
+    mode: '0755'
+
+- name: Mount the backup NFS share
+  ansible.posix.mount:
+    path: /mnt/backup_share
+    src: "192.168.122.1:/opt/nfs/backup"
+    fstype: nfs4
+    opts: defaults,rw,nofail
+    state: mounted
+
+- name: Configure autofs master entry
+  ansible.builtin.lineinfile:
+    path: /etc/auto.master
+    line: "/mnt/auto_home /etc/auto.home --timeout=60"
+    state: present
+  notify: Restart autofs service
+
+- name: Deploy the autofs home map layout
+  ansible.builtin.copy:
+    dest: /etc/auto.home
+    content: |
+      * -rw,soft 192.168.122.1:/opt/nfs/home/&
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart autofs service
+
+- name: Ensure autofs daemon is enabled and running
+  ansible.builtin.service:
+    name: autofs
+    state: started
+    enabled: true
+
+- name: Ensure Python firewalld binding library is present on target
+  ansible.builtin.package:
+    name:
+      - firewalld
+      - python3-firewall
+    state: present
+
+- name: Ensure firewalld is in a fresh state
+  ansible.builtin.systemd_service:
+    name: firewalld
+    state: restarted
+
+- name: Secondary interface bind to DMZ
+  ansible.posix.firewalld:
+    zone: dmz
+    interface: enp2s0
+    permanent: true
+    immediate: true
+    state: enabled
+
+- name: Open port 8080/tcp inside the DMZ
+  ansible.posix.firewalld:
+    zone: dmz
+    port: 8080/tcp
+    permanent: true
+    immediate: true
+    state: enabled
+
+- name: Ensure SELinux is enforcing
+  ansible.posix.selinux:
+    policy: targeted
+    state: enforcing
+
+- name: Allow port through SELinux
+  ansible.builtin.seport:
+    ports: 8080
+    proto: tcp
+    setype: http_port_t
+    state: present
+
+- name: Allow httpd to network connect
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+
+- name: Ensure target application directory exists
+  ansible.builtin.file:
+    path: /opt/app_data
+    state: directory
+    mode: '0755'
+
+- name: Ensure the directory has proper SELinux context
+  ansible.builtin.sefcontext:
+    target: '/opt/app_data(/.*)?'
+    setype: httpd_sys_content_t
+    state: present
+  notify: Restore Context of folder
