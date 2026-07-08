@@ -41,19 +41,6 @@
       name: sshd
       state: restarted
 
-- name: Apply official RHEL system roles to performance nodes
-  hosts: alpha
-  become: true
-  vars:
-   timesync_ntp_servers:
-    - hostname: pool.ntp.org
-      iburst: true
-   tuned_profile: throughput-performance
-
-  roles:
-   - fedora.linux_system_roles.timesync
-   - fedora.linux_system_roles.kernel_settings
-
 - name: Apply Storage Config to Relevant Nodes
   hosts: beta
   roles:

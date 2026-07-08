@@ -8,7 +8,6 @@ Organize the specification across exactly 3 Custom Ansible roles
 ## State Space List
 * Creation, modification, and deletion of GPT disk partitions.
 * Configuration of LVM physical volumes, volume groups, and logical volumes.
-* Extension of existing logical volumes.
 * Addition and activation of system swap space.
 * Formatting and deployment of VFAT, ext4, and XFS filesystems.
 * Structural management (creation, copying, moving, deletion) of directories and files.
@@ -61,6 +60,9 @@ Organize the specification across exactly 3 Custom Ansible roles
 # Output Format & Tone
 - **Tone:** Direct, authoritative engineering specification document handed to an engineer for execution.
 - **Structure:** Clear node/role blueprints detailing requirements per role.
+
+# Important Notes
+The target machines are VMs that have a secondary drive /dev/vdb of 5GiB in size. This is important to know for the tasks related to storage. 
 
 # Constraints
 - **DO NOT** output any playbook code, YAML, solutions, or syntax examples.

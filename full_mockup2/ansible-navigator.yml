@@ -1,0 +1,18 @@
+ansible-navigator:
+  ansible:
+    config:
+      path: ./ansible.cfg
+    playbook:
+      path: site.yml
+  execution-environment:
+    image: localhost/mockup-ee:latest
+    pull:
+      policy: missing
+  logging:
+    level: debug
+    append: False
+    file: $PWD/logs/ansible-navigator.log
+  mode: stdout
+  playbook-artifact:
+    enable: False
+

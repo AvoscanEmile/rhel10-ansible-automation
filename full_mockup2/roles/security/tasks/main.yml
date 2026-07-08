@@ -1,0 +1,139 @@
+---
+- name: Create secure directory
+  ansible.builtin.file:
+    mode: '0750'
+    state: directory
+    group: root
+    owner: root
+    path: /var/www/secure_app
+
+- name: Copy hosts file as backup into directory
+  ansible.builtin.copy:
+    src: /etc/hosts
+    dest: /var/www/secure_app/hosts.bak
+    mode: '0755'
+    remote_src: true
+
+- name: Move the hosts backup to the temporary directory
+  ansible.builtin.command:
+    cmd: mv /var/www/secure_app/hosts.bak /tmp/hosts.bak
+    removes: /var/www/secure_app/hosts.bak
+
+- name: Delete the defaults index.html file
+  ansible.builtin.file:
+    path: /var/www/index.html
+    state: absent
+
+- name: File Permission Remediation Engine
+  block:
+    - name: Attempt to recursively apply 0644 to files under /opt/tools/
+      ansible.builtin.shell: |
+        find /opt/tools/ -type f -exec chmod 0644 {} +
+      changed_when: false
+  rescue:
+    - name: Permission denial caught - Aggressively chown tree to root:root
+      ansible.builtin.file:
+        path: /opt/tools/
+        owner: root
+        group: root
+        recurse: true
+
+    - name: Retry applying 0644 permissions to files post-chown
+      ansible.builtin.shell: |
+        find /opt/tools/ -type f -exec chmod 0644 {} +
+      changed_when: false
+
+  always:
+    - name: Output audit timestamp to the audit log
+      ansible.builtin.shell: |
+        echo "Permission audit executed at: $(date)" >> /var/log/perm_audit.log
+      changed_when: false
+
+- name: Ensure SELinux is Enforcing
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+
+- name: Set specific Seboolean.
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+
+- name: Set specific SELinux port
+  ansible.builtin.seport:
+    ports: 8080
+    proto: tcp
+    setype: http_port_t
+    state: present
+
+- name: Ensure proper labeling of folder
+  community.general.sefcontext:
+    target: '/var/www/secure_app(/.*)?'
+    setype: httpd_sys_content_t
+    state: present
+  notify: Restore context of folder
+
+- name: Ensure packages are installed
+  ansible.builtin.package:
+    name:
+      - flatpak
+      - httpd
+      - firewalld
+    state: present
+
+- name: Ensure services are enabled and started
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - httpd
+    - firewalld
+
+- name: Allow traffic through firewall port
+  ansible.posix.firewalld:
+    port: 8080/tcp
+    state: enabled
+    permanent: true
+    immediate: true
+    zone: public
+
+- name: Allow traffic through firewall service
+  ansible.posix.firewalld:
+    service: https
+    state: enabled
+    permanent: true
+    immediate: true
+    zone: public
+
+- name: Add flathub to flatpak
+  ansible.builtin.flatpak_remote:
+    flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
+    state: present
+    name: flathub
+
+- name: Install flatpak package
+  ansible.builtin.flatpak:
+    name: org.gnome.Calculator
+    state: present
+    method: system
+
+- name: Mutate listening port from 80 to 8080
+  ansible.builtin.lineinfile:
+    path: /etc/httpd/conf/httpd.conf
+    regexp: '^Listen 80$'
+    line: 'Listen 8080'
+  notify: Restart httpd
+
+- name: Inject multi-line VirtualHost block
+  ansible.builtin.blockinfile:
+    path: /etc/httpd/conf/httpd.conf
+    marker: "# {mark} ANSIBLE MANAGED VIRTUALHOST"
+    block: |
+      <VirtualHost *:8080>
+          ServerAdmin webmaster@localhost
+          DocumentRoot /var/www/secure_app
+          ErrorLog logs/secure_app-error_log
+          CustomLog logs/secure_app-access_log common
+      </VirtualHost>
+  notify: Restart httpd

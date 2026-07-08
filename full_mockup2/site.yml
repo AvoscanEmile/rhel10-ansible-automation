@@ -1,0 +1,59 @@
+- name: Setup basic config on all nodes
+  hosts: all
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Distribute SSH keys
+      ansible.posix.authorized_key:
+        user: red
+        state: present
+        key: "{{ lookup('file', 'keys/mockup_key.pub') }}"
+
+    - name: Disable Password-Bases Authentication
+      ansible.builtin.copy:
+        content: |
+          PasswordAuthentication no
+        mode: '0600'
+        owner: root
+        group: root
+        dest: /etc/ssh/sshd_config.d/auth.conf
+      notify: Restart sshd
+
+    - name: Configure BaseOS
+      ansible.builtin.yum_repository:
+        name: BaseOS
+        description: BaseOS
+        gpgcheck: false
+        state: present
+        baseurl: "http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/"
+
+    - name: Configure AppStream
+      ansible.builtin.yum_repository:
+        name: AppStream
+        description: AppStream
+        gpgcheck: false
+        state: present
+        baseurl: "http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/"
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+
+- name: Configure Alpha Nodes
+  hosts: alpha
+  gather_facts: true
+  roles:
+    - infrastructure_baseline
+
+- name: Configure Gamma Nodes
+  hosts: gamma
+  gather_facts: false
+  roles:
+    - storage_engineering
+
+- name: Configure Delta Nodes
+  hosts: delta
+  gather_facts: false
+  roles:
+    - security

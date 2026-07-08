@@ -1,0 +1,194 @@
+---
+- name: Ensure proper partitioning
+  ansible.builtin.parted:
+    device: /dev/vdb
+    label: gpt
+    state: present
+    number: "{{ item.number }}"
+    name: "{{ item.name }}"
+    part_start: "{{ item.start }}"
+    part_end: "{{ item.end }}"
+  loop:
+    - { number: 1, name: vol_vdb1, start: 1MiB, end: 501MiB}
+    - { number: 2, name: vol_vdb2, start: 501MiB, end: 2553MiB}
+    - { number: 3, name: vol_vdb3, start: 2553MiB, end: 4089MiB}
+
+- name: Create volume group
+  ansible.builtin.lvg:
+    vg: app_vg
+    pvs: /dev/vdb3
+
+- name: Create LVM
+  ansible.builtin.lvol:
+    vg: app_vg
+    lv: db_lv
+    size: 1g
+
+- name: Assign filesystems
+  ansible.builtin.filesystem:
+    fstype: "{{ item.fs }}"
+    dev: "{{ item.dev }}"
+  loop:
+    - { fs: vfat, dev: /dev/vdb1 }
+    - { fs: ext4, dev: /dev/vdb2 }
+    - { fs: xfs, dev: /dev/app_vg/db_lv }
+
+- name: Ensure mountpoints exist
+  ansible.builtin.file:
+    state: directory
+    path: "{{ item }}"
+    group: root
+    owner: root
+    mode: '0644'
+  loop:
+    - /mnt/data_store
+    - /mnt/efi_backup
+
+- name: Properly mount devices
+  ansible.posix.mount:
+    path: "{{ item.mount }}"
+    src: "{{ item.dev }}"
+    fstype: "{{ item.fs }}"
+    state: mounted
+  loop:
+    - { mount: /mnt/data_store, dev: /dev/vdb1, fs: vfat }
+    - { mount: /mnt/efi_backup, dev: /dev/vdb2, fs: ext4 }
+
+- name: Provide swap space
+  block:
+    - name: Assign partition as swap
+      ansible.builtin.filesystem:
+        fstype: swap
+        dev: /dev/vdb4
+    - name: Define swap inside fstab
+      ansible.posix.mount:
+        path: none
+        fstype: swap
+        src: /dev/vdb4
+        state: present
+        opts: defaults
+  rescue:
+    - name: Genereta a flat 512MiB flatfile
+      ansible.builtin.command:
+        cmd: dd if=/dev/zero of=/swapfile bs=1M count=512
+        creates: /swapfile
+    - name: Strict permissions on the swapfile
+      ansible.builtin.file:
+        owner: root
+        group: root
+        mode: '0600'
+        path: /swapfile
+    - name: Make swapfile swap
+      ansible.builtin.filesystem:
+        fstype: swap
+        dev: /swapfile
+    - name: Add swapfile to fstab
+      ansible.posix.mount:
+        path: none
+        fstype: swap
+        src: /swapfile
+        state: present
+        opts: defaults
+  always:
+    - name: Turn swap on
+      ansible.builtin.command: swapon -a
+      changed_when: false
+
+- name: Ensure NFS mountpoint exists
+  ansible.builtin.file:
+    state: directory
+    owner: root
+    group: root
+    mode: '0644'
+    path: /mnt/backup_nfs
+
+- name: Mount NFS folder
+  ansible.posix.mount:
+    path: /mnt/backup_nfs
+    src: '192.168.122.1:/opt/nfs/backup'
+    state: mounted
+    opts: rw,sync
+    fstype: nfs4
+
+- name: Ensure autofs is present
+  ansible.builtin.package:
+    name: autofs
+    state: present
+
+- name: Configure the master map
+  ansible.builtin.copy:
+    dest: /etc/auto.master.d/nfs.autofs
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      /nfs/home /etc/auto.nfs
+  notify: Restart autofs
+
+- name: Configure wildcard mapping
+  ansible.builtin.copy:
+    dest: /etc/auto.nfs
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      * -rw,synch 192.168.122.1:/opt/nfs/home/&
+  notify: Restart autofs
+
+- name: Ensure autofs service is enabled and started
+  ansible.builtin.service:
+    name: autofs
+    state: started
+    enabled: true
+
+- name: Archive the contents of /etc/lvm
+  ansible.builtin.archive:
+    path: /etc/lvm
+    dest: /root/lvm_backup.tar.gz
+    mode: '0644'
+    format: gz
+
+- name: Ensure target folder exists
+  ansible.builtin.file:
+    state: directory
+    path: /opt/tools
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Unarchive the contents of the archive
+  ansible.builtin.unarchive:
+    dest: /opt/tools/
+    src: /root/lvm_backup.tar.gz
+    remote_src: true
+
+- name: Make sure target folder exists
+  ansible.builtin.file:
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+    path: /opt/tools
+
+- name: Make sure target file exists
+  ansible.builtin.file:
+    state: touch
+    mode: '0755'
+    owner: root
+    group: root
+    path: /opt/tools/tool.sh
+
+- name: Create softlink to file
+  ansible.builtin.file:
+    state: link
+    src: /opt/tools/tool.sh
+    dest: /usr/local/bin/primary_tool
+
+- name: Create hardlink to file
+  ansible.builtin.file:
+    state: hard
+    src: /opt/tools/tool.sh
+    dest: /root/tool_backup
+    mode: '0644'
+    owner: root
+    group: root
