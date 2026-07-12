@@ -1,0 +1,206 @@
+---
+- name: Configure Partitions
+  community.general.parted:
+    device: /dev/vdb
+    number: "{{ item.number }}"
+    part_start: "{{ item.start }}"
+    part_end: "{{ item.end }}"
+    state: present
+  loop:
+    - { number: 1, start: 1MiB, end: 501MiB }
+    - { number: 2, start: 501MiB, end: 100% }
+- name: Configure Volume Group
+  community.general.lvg:
+    pvs: /dev/vdb2
+    vg: vg_primary
+    state: present
+- name: Configure LVs
+  block:
+    - name: Attempt oversized LV
+      community.general.lvol:
+        vg: vg_primary
+        lv: lv_oversize
+        size: 6G
+        state: present
+  rescue:
+    - name: Attempt proper LVs
+      community.general.lvol:
+        vg: vg_primary
+        lv: "{{ item.lv }}"
+        size: "{{ item.size }}"
+        state: present
+      loop:
+        - { lv: lv_xfs, size: 2G }
+        - { lv: lv_ext4, size: 200M }
+        - { lv: lv_vfat, size: 100M }
+    - name: Format filesystems
+      community.general.filesystem:
+        dev: "{{ item.device }}"
+        fstype: "{{ item.fstype }}"
+        state: present
+      loop:
+        - { device: /dev/vg_primary/lv_xfs, fstype: xfs }
+        - { device: /dev/vg_primary/lv_ext4, fstype: ext4 }
+        - { device: /dev/vg_primary/lv_vfat, fstype: vfat }
+    - name: Make sure mountpoints exists
+      ansible.builtin.file:
+        state: directory
+        mode: '0644'
+        path: "{{ item }}"
+        group: root
+        owner: root
+      loop:
+        - /mnt/app_data
+        - /mnt/legacy_app
+    - name: Get UUIDs of lv_xfs
+      ansible.builtin.command: blkid -o value -s UUID /dev/vg_primary/lv_xfs
+      register: storage_xfs_uuid
+      changed_when: false
+    - name: Get UUIDs of lv_ext
+      ansible.builtin.command: blkid -o value -s UUID /dev/vg_primary/lv_ext4
+      register: storage_ext4_uuid
+      changed_when: false
+    - name: Mount filesystems
+      ansible.posix.mount:
+        path: "{{ item.path }}"
+        fstype: "{{ item.fstype }}"
+        src: "{{ item.src }}"
+        opts: defaults
+        state: mounted
+      loop:
+        - { path: /mnt/app_data, fstype: xfs, src: "UUID={{ storage_xfs_uuid.stdout }}" }
+        - { path: /mnt/legacy_app, fstype: ext4, src: "UUID={{ storage_ext4_uuid.stdout }}" }
+  always:
+    - name: Rescan partition table
+      ansible.builtin.command: partprobe /dev/vdb
+      changed_when: false
+
+- name: Verify if vdb1 is already swap
+  ansible.builtin.command: blkid -o value -s TYPE /dev/vdb1
+  register: storage_disk_type
+  changed_when: false
+  failed_when: false
+
+- name: Make swap if is not already swap
+  ansible.builtin.command: mkswap /dev/vdb1
+  changed_when: true
+  when: storage_disk_type.stdout != "swap"
+
+- name: Mount swap persistently into fstab
+  ansible.posix.mount:
+    src: /dev/vdb1
+    path: none
+    fstype: swap
+    opts: sw
+    state: present
+
+- name: Turn on swap
+  ansible.builtin.command: swapon -a
+  changed_when: false
+
+- name: Create directory structure
+  ansible.builtin.file:
+    state: directory
+    mode: '0755'
+    path: "{{ item }}"
+  loop:
+    - /opt/nfs/local_sync
+    - /opt/archive_staging
+    - /opt/symlink_farm
+
+- name: Create Hard Link to fstab
+  ansible.builtin.file:
+    state: hard
+    path: /opt/symlink_farm/fstab_hard.link
+    src: /etc/fstab
+    mode: '0755'
+
+- name: Create Soft Link to /var/log
+  ansible.builtin.file:
+    state: link
+    src: /var/log
+    path: /opt/symlink_farm/logs_soft.link
+
+- name: Ensure mountpoint for NFS is present
+  ansible.builtin.file:
+    state: directory
+    path: /mnt/nfs_backup
+    mode: '0755'
+
+- name: Mount NFS share
+  ansible.posix.mount:
+    src: 192.168.122.1:/opt/nfs/backup
+    path: /mnt/nfs_backup
+    state: mounted
+    fstype: nfs4
+
+- name: Ensure autofs package installation
+  ansible.builtin.package:
+    state: present
+    name:
+      - autofs
+      - nfs-utils
+
+- name: Ensure autofs daemon is enabled and running
+  ansible.builtin.service:
+    name: autofs
+    state: started
+    enabled: true
+
+
+- name: Configure master file
+  ansible.builtin.copy:
+    content: |
+      /mnt/auto_home /etc/auto.nfs
+    dest: /etc/auto.master.d/nfs.master
+    mode: '0644'
+    group: root
+    owner: root
+  notify: Restart autofs daemon
+
+- name: Configure auto.nfs file
+  ansible.builtin.copy:
+    content: |
+      * -rw,sync 192.168.122.1:/opt/nfs/home/&
+    dest: /etc/auto.nfs
+    mode: '0644'
+    group: root
+    owner: root
+  notify: Restart autofs daemon
+
+- name: Archive /etc
+  community.general.archive:
+    path: /etc
+    dest: /opt/archive_staging/etc_backup.tar.gz
+    format: gz
+    mode: '0644'
+
+- name: Ensure etc_extraction folder exists
+  ansible.builtin.file:
+    path: /opt/archive_staging/etc_extraction
+    state: directory
+    mode: '0644'
+
+- name: Unarchive /etc inside etc_extraction
+  ansible.builtin.unarchive:
+    dest: /opt/archive_staging/etc_extraction
+    src: /opt/archive_staging/etc_backup.tar.gz
+    remote_src: true
+
+- name: Enforce multi-user.target as the default
+  ansible.builtin.file:
+    state: link
+    src: /usr/lib/systemd/system/multi-user.target
+    path: /etc/systemd/system/default.target
+    force: true
+
+- name: Verify current kernel arguments
+  ansible.builtin.command: grubby --info=DEFAULT
+  register: storage_grubby
+  changed_when: false
+
+- name: Ensure console parameters are appended to kernel
+  ansible.builtin.command: grubby --update-kernel=ALL --args="console=ttyS0,11520"
+  when: "'console=ttyS0,11520' not in storage_grubby.stdout"
+  notify: Node Reboot
+  changed_when: true

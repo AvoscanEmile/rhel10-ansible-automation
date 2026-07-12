@@ -1,0 +1,109 @@
+---
+- name: Create groups
+  ansible.builtin.group:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - auditops
+    - secops
+    - sysadmins
+- name: Create users and ensure proper membership
+  ansible.builtin.user:
+    name: operator-a
+    groups:
+      - auditops
+      - secops
+    state: present
+    append: true
+    password: "{{ 'Password' | ansible.builtin.password_hash('sha512') }}"
+    update_password: on_create
+- name: Create users and ensure proper membership
+  ansible.builtin.user:
+    name: operator-b
+    groups:
+      - auditops
+      - secops
+    state: present
+    append: true
+    password_expire_max: 90
+    password: "{{ 'Password' | ansible.builtin.password_hash('sha512') }}"
+    update_password: on_create
+- name: Create admin user
+  ansible.builtin.user:
+    name: admin_c
+    state: present
+    group: sysadmins
+    password: "{{ 'Password' | ansible.builtin.password_hash('sha512') }}"
+    update_password: on_create
+- name: Ensure sysadmins have passwordless sudo
+  ansible.builtin.copy:
+    content: |
+      %sysadmins ALL=(ALL) NOPASSWD: ALL
+    dest: /etc/sudoers.d/sysadmin_access
+    mode: '0600'
+    owner: root
+    group: root
+- name: Ensure archive_staging folder existence
+  ansible.builtin.file:
+    state: directory
+    mode: '0750'
+    owner: admin_c
+    group: secops
+    path: /opt/archive_staging
+- name: Ensure global umask
+  ansible.builtin.copy:
+    content: |
+      umask 0027
+    dest: /etc/profile.d/sec_umask.sh
+    mode: '0600'
+    owner: root
+    group: root
+- name: Ensure SELinux is enforcing
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+- name: Apply proper context to archive_staging
+  community.general.sefcontext:
+    path: /opt/archive_staging(/.*)?
+    setype: public_content_rw_t
+    reload: true
+    state: present
+  notify: Restore Context
+- name: Ensure firewall is installed
+  ansible.builtin.package:
+    name: firewalld
+    state: present
+- name: Ensure firewalld is started and enabled
+  ansible.builtin.service:
+    name: firewalld
+    state: started
+    enabled: true
+# - name: Bind the active management interface permanently to the public zone
+#   ansible.posix.firewalld:
+#     zone: public
+#     interface: "{{ ansible_default_ipv4.interface }}"
+#     state: enabled
+#     permanent: true
+#     immediate: true
+# - name: Verify active firewall zone
+#   ansible.builtin.command: firewall-cmd --get-default-zone
+#   register: security_zone
+#   changed_when: false
+# - name: Enforce drop as the primary firewall zone
+#   ansible.builtin.command: firewall-cmd --set-default-zone=drop
+#   when: security_zone.stdout != 'drop'
+#   changed_when: true
+# - name: Bind ssh to the public zone
+#   ansible.posix.firewalld:
+#     service: ssh
+#     zone: public
+#     state: enabled
+#     permanent: true
+#     immediate: true
+# - name: Bind 8443/tcp port to the public zone
+#   ansible.posix.firewalld:
+#     port: 8443/tcp
+#     state: enabled
+#     zone: public
+#     permanent: true
+#     immediate: true

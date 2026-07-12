@@ -1,0 +1,93 @@
+---
+- name: Ensure groups existence
+  ansible.builtin.group:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - webadmin
+    - dbadmin
+- name: Create and assign webadmins
+  ansible.builtin.user:
+    name: "{{ item }}"
+    group: webadmin
+    state: present
+    password: "{{ 'R3dHat123!' | password_hash('sha512', 'salt') }}"
+    password_expire_max: 90
+  loop:
+    - alpha
+    - bravo
+  no_log: true
+- name: Create and assign dbadmin
+  ansible.builtin.user:
+    name: charlie
+    group: dbadmin
+    state: present
+    password: "{{ 'R3dHat123!' | password_hash('sha512', 'salt') }}"
+    password_expire_max: 90
+  no_log: true
+- name: Ensure passwordless sudo for webadmins
+  ansible.builtin.template:
+    src: webadmin.j2
+    dest: /etc/sudoers.d/webadmin
+    mode: '0440'
+    group: root
+    owner: root
+- name: Ensure firewalld is installed
+  ansible.builtin.package:
+    name: firewalld
+    state: present
+- name: Ensure firewalld is running
+  ansible.builtin.service:
+    name: firewalld
+    state: started
+    enabled: true
+- name: Bind enp2s0 to dmz zone (Permanent Blueprint)
+  ansible.posix.firewalld:
+    zone: dmz
+    interface: enp2s0
+    state: enabled
+    permanent: true
+- name: Allow 8080/tcp through firewall (Permanent Blueprint)
+  ansible.posix.firewalld:
+    zone: dmz
+    port: 8080/tcp
+    state: enabled
+    permanent: true
+- name: Allow http through the dmz (Permanent Blueprint)
+  ansible.posix.firewalld:
+    zone: dmz
+    service: http
+    state: enabled
+    permanent: true
+- name: Flush all permanent changes into the live firewall
+  ansible.builtin.command: firewall-cmd --reload
+  changed_when: false
+- name: Ensure SELinux is enforcing
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+- name: Allow port 8080/tcp through SELinux
+  community.general.seport:
+    ports: 8080
+    proto: tcp
+    setype: http_port_t
+    state: present
+- name: Allow http to network connect within SELinux
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+- name: Ensure /var/lib/app exists
+  ansible.builtin.file:
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+    path: /var/lib/app
+  notify: Restore Folder Context
+- name: Ensure /var/lib/app has proper SELinux context
+  community.general.sefcontext:
+    path: /var/lib/app(/.*)?
+    setype: httpd_sys_content_t
+    state: present
+  notify: Restore Folder Context

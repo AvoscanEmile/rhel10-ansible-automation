@@ -1,0 +1,49 @@
+---
+- name: Deploy Basic Configuration
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Distribute SSH Public Keys
+      ansible.posix.authorized_key:
+        key: "{{ lookup('file', 'keys/id_rsa.pub') }}"
+        state: present
+        user: red
+    - name: Disable Password-Based Auth
+      ansible.builtin.copy:
+        content: |
+          PasswordAuthentication no
+        dest: /etc/ssh/sshd_config.d/auth.conf
+        group: root
+        owner: root
+        mode: '0600'
+      notify: Restart sshd
+    - name: Configure yum_repositories
+      ansible.builtin.yum_repository:
+        baseurl: "{{ item.url }}"
+        gpgcheck: false
+        state: present
+        name: "{{ item.name }}"
+        description: "{{ item.description }}"
+      loop:
+        - { name: BaseOS, description: BaseOS, url: http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/ }
+        - { name: AppStream, description: AppStream, url: http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/}
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+- name: Configure Storage Nodes
+  hosts: alpha
+  gather_facts: false
+  roles:
+    - storage
+- name: Configure Security Nodes
+  hosts: beta
+  gather_facts: true
+  roles:
+    - security
+- name: Configure Services Nodes
+  hosts: delta
+  gather_facts: true
+  roles:
+    - services

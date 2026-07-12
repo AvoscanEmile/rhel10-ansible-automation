@@ -1,0 +1,103 @@
+---
+- name: Ensure Package Installation
+  ansible.builtin.package:
+    name:
+      - chrony
+      - lvm2
+      - e2fsprogs
+      - xfsprogs
+    state: present
+- name: Configure disk partition
+  community.general.parted:
+    part_start: "{{ item.start }}"
+    part_end: "{{ item.end }}"
+    number: "{{ item.number }}"
+    device: /dev/vdb
+    state: present
+  loop:
+    - { number: 1, start: 1MiB, end: 1025MiB }
+    - { number: 2, start: 1025MiB, end: 4097MiB }
+    - { number: 3, start: 4097MiB, end: 100% }
+  when: ansible_facts['devices']['vdb']['size'] == '5.00 GB'
+- name: Ensure Volume Group is present
+  community.general.lvg:
+    pvs:
+      - /dev/vdb2
+    state: present
+    vg: vg_system
+- name: Ensure LVs are present
+  community.general.lvol:
+    size: "{{ item.size }}"
+    lv: "{{ item.name }}"
+    state: present
+    vg: vg_system
+  loop:
+    - { name: lv_app, size: 2.5G }
+    - { name: lv_swap, size: 500M }
+- name: Ensure filesystem configuration
+  community.general.filesystem:
+    dev: "{{ item.device }}"
+    fstype: "{{ item.fstype }}"
+    opts: "{{ item.opts | default(omit) }}"
+    state: present
+  loop:
+    - { device: /dev/vdb1, fstype: ext4 }
+    - { device: /dev/vg_system/lv_app, fstype: xfs }
+    - { device: /dev/vdb3, fstype: xfs, opts: "-L DATA_VOL" }
+    - { device: /dev/vg_system/lv_swap, fstype: swap }
+- name: Gather device facts
+  ansible.builtin.setup:
+    gather_subset:
+      - 'devices'
+- name: Ensure mountpoints exist
+  ansible.builtin.file:
+    state: directory
+    dest: "{{ item }}"
+    mode: '755'
+    owner: red
+    group: red
+  loop:
+    - /mnt/boot_backup
+    - /var/lib/app
+    - /mnt/data
+- name: Mount filesystems
+  ansible.posix.mount:
+    path: "{{ item.path }}"
+    src: "{{ item.src }}"
+    fstype: "{{ item.fstype }}"
+    state: "{{ item.state }}"
+    opts: defaults
+  loop:
+    - {path: /mnt/boot_backup, src: "UUID='{{ ansible_facts['devices']['vdb']['partitions']['vdb1']['uuid'] }}'", fstype: ext4, state: mounted}
+    - {path: /var/lib/app, src: /dev/vg_system/lv_app, fstype: xfs, state: mounted}
+    - {path: none, src: /dev/vg_system/lv_swap, fstype: swap, state: present}
+    - {path: /mnt/data, src: LABEL=DATA_VOL, fstype: xfs, state: mounted}
+- name: Configure network interface
+  community.general.nmcli:
+    ip4: "{{ custom_ip }}"
+    gw4: 192.160.122.1
+    ifname: enp2s0
+    conn_name: enp2s0
+    state: present
+    type: ethernet
+  notify: Reload network interface
+- name: Configure /etc/hosts
+  ansible.builtin.template:
+    dest: /etc/hosts
+    mode: '0644'
+    owner: root
+    group: root
+    src: hosts.j2
+- name: Configure chronyd properly
+  ansible.builtin.template:
+    dest: /etc/chrony.conf
+    mode: '0644'
+    owner: root
+    group: root
+    src: chrony.j2
+  notify: Restart chronyd
+- name: Ensure chronyd is enabled and running
+  ansible.builtin.service:
+    name: chronyd
+    state: started
+    enabled: true

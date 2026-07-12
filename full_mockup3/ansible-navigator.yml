@@ -1,0 +1,21 @@
+ansible-navigator:
+  ansible:
+    config:
+      path: ./ansible.cfg
+    cmdline: "--forks 15"
+    playbook:
+      path: site.yml
+  execution-environment:
+    container-engine: auto
+    enabled: True
+    image: localhost/my-custom-ee:latest
+    pull:
+      policy: missing
+  logging:
+    level: debug
+    append: False
+    file: logs/ansible-navigator.log
+  mode: stdout 
+  playbook-artifact:
+    enable: false
+

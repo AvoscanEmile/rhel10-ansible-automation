@@ -1,0 +1,4 @@
+---
+- name: Restore Context
+  ansible.builtin.command: restorecon -R /opt/archive_staging
+  changed_when: true

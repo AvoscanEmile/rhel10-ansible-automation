@@ -1,0 +1,11 @@
+---
+- name: Restart autofs daemon
+  ansible.builtin.service:
+    name: autofs
+    state: restarted
+
+- name: Node Reboot
+  ansible.builtin.reboot:
+    pre_reboot_delay: 2
+    connect_timeout: 5
+    reboot_timeout: 300

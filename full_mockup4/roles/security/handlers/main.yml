@@ -1,0 +1,4 @@
+---
+- name: Restore Folder Context
+  ansible.builtin.command: restorecon -R /var/lib/app
+  changed_when: false

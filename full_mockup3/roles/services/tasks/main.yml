@@ -1,0 +1,180 @@
+---
+- name: Ensure hosts resolution
+  ansible.builtin.lineinfile:
+    line: "192.168.122.210 services.exam.local"
+    path: /etc/hosts
+    state: present
+- name: Tag port 8443 properly
+  community.general.seport:
+    ports:
+      - 8443
+    proto: tcp
+    setype: http_port_t
+    state: present
+- name: Enable selinux boolean
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+- name: Configure interface is RAM is bigger than 1050MB
+  community.general.nmcli:
+    ip4: 192.168.122.210/24
+    ip6: 2001:db8::210/64
+    ifname: enp1s0
+    conn_name: high_memory
+    state: present
+  when: ansible_facts['memtotal_mb'] > 1050
+- name: Add banner to MOTD
+  ansible.builtin.blockinfile:
+    path: /etc/motd
+    create: true
+    owner: root
+    group: root
+    mode: '0644'
+    marker: "# {mark} SYSTEM MANAGEMENT BANNER"
+    block: |
+      =====================================================================
+      Welcome to {{ ansible_facts['hostname'] | upper }}
+      Managed by Platform Architecture Operations Engine
+
+      WARNING: Unauthorized access to this system is strictly prohibited.
+      All actions, commands, and active sessions are fully monitored
+      and audited. Disconnect immediately if you are not authorized.
+      =====================================================================
+- name: Install flatpak
+  ansible.builtin.package:
+    name: flatpak
+    state: present
+- name: Configure flathub
+  community.general.flatpak_remote:
+    flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
+    name: flathub
+    state: present
+- name: Install packages
+  ansible.builtin.package:
+    name:
+      - chrony
+      - tuned
+- name: Install Calculator from flatpak
+  community.general.flatpak:
+    name:
+      - org.gnome.Calculator
+    state: present
+    method: system
+- name: Ensure services are running properly
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - sshd
+    - chronyd
+    - tuned
+- name: Ensure persistent journaling
+  ansible.builtin.file:
+    state: directory
+    path: /var/log/journal
+    mode: '0755'
+    owner: root
+    group: root
+- name: Ensure admin_c user exists
+  ansible.builtin.user:
+    name: admin_c
+    group: wheel
+    state: present
+- name: Force overwrite chrony.conf with secure Cloudflare baseline
+  ansible.builtin.copy:
+    dest: /etc/chrony.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # =================================================================
+      # CHRONY CLIENT BASELINE - MANAGED AUTOMATICALLY BY ANSIBLE
+      # =================================================================
+
+      # Target Upstream NTP Provider
+      server time.cloudflare.com iburst
+
+      # System Drift Tracking Layout
+      driftfile /var/lib/chrony/drift
+
+      # Force stepping system clock if divergence exceeds 1 second on boot
+      makestep 1.0 3
+
+      # Enable Real-Time Clock synchronization to the hardware clock
+      rtcsync
+
+      # Audit Log Placement
+      logdir /var/log/chrony
+  notify: Operational Chrony Daemon Reset
+- name: Create the systemd service execution wrapper
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/sys-health.service
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Execute Mandated System Health Check Binary
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/sys-health-binary  # Swap with your actual binary path
+
+- name: Create the matching systemd timer unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/sys-health.timer
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Trigger Scheduled Daily System Health Check
+
+      [Timer]
+      OnCalendar=daily
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
+
+- name: Force daemon-reload and activate the health timer unit
+  ansible.builtin.systemd_service:
+    name: sys-health.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+
+# =======================================================
+# REQ 2: USER-SPECIFIC CRON INJECTION (ADMIN_C)
+# =======================================================
+- name: Inject 15-minute cron timestamp entry exclusively for admin_c
+  ansible.builtin.cron:
+    name: "Admin_C User Execution Timestamp Ping"
+    user: admin_c                     # Directs mapping to /var/spool/cron/admin_c
+    minute: "*/15"
+    job: "date >> /tmp/admin_ping.log"
+
+# =======================================================
+# REQ 3: SYSTEM TUNING VIA TUNED DAEMON SUBSYSTEM
+# =======================================================
+- name: Ensure tuned package infrastructure is present
+  ansible.builtin.dnf:
+    name: tuned
+    state: present
+
+- name: Ensure tuned service engine is live and persistent across reboots
+  ansible.builtin.systemd_service:
+    name: tuned
+    state: started
+    enabled: true
+
+- name: Query current live active system tuning profile layout
+  ansible.builtin.command: tuned-adm active
+  register: services_live_tuned_profile
+  changed_when: false
+
+- name: Transition active system profile to throughput-performance
+  ansible.builtin.command: tuned-adm profile throughput-performance
+  when: "'throughput-performance' not in services_live_tuned_profile.stdout"
+  changed_when: true

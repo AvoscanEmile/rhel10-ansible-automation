@@ -1,0 +1,93 @@
+---
+- name: Ensure directory tree is present
+  ansible.builtin.file:
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+    path: "{{ item }}"
+  loop:
+    - /opt/app/bin
+    - /opt/app/conf
+    - /mnt/backup_nfs
+    - /mnt/home_nfs
+- name: Ensure alpha user exists
+  ansible.builtin.user:
+    name: alpha
+    state: present
+- name: Ensure webadmin group exists
+  ansible.builtin.group:
+    name: webadmin
+    state: present
+- name: Create softlink
+  ansible.builtin.file:
+    state: link
+    path: /opt/app/logs
+    src: /var/log/httpd
+    force: true
+- name: Mount NFS shares
+  ansible.posix.mount:
+    path: "{{ item.path }}"
+    src: "{{ item.src }}"
+    state: mounted
+    opts: rw,sync
+    fstype: nfs4
+  loop:
+    - { path: /mnt/backup_nfs, src: 192.168.122.1:/opt/nfs/backup }
+    - { path: /mnt/home_nfs, src: 192.168.122.1:/opt/nfs/home }
+- name: Archive local static directory
+  community.general.archive:
+    path:
+      - /etc/ssh
+    dest: /var/tmp/ssh_backup.tar.gz
+    format: gz
+    mode: '0644'
+- name: Ensure folder exists
+  ansible.builtin.file:
+    path: /var/tmp/extracted_ssh
+    state: directory
+    mode: '0755'
+- name: Unarchive cleanly to local destination
+  ansible.builtin.unarchive:
+    src: /var/tmp/ssh_backup.tar.gz
+    dest: /var/tmp/extracted_ssh
+    remote_src: true
+    creates: /var/tmp/extracted_ssh/sshd_config
+- name: Ensure httpd is installed
+  ansible.builtin.package:
+    name: httpd
+    state: present
+- name: Enable and start httpd service
+  ansible.builtin.service:
+    name: httpd
+    state: started
+    enabled: true
+  register: application_httpd_status
+- name: Deploy a tracker file if there was a change
+  ansible.builtin.file:
+    path: /opt/app/conf/service_initialized.lock
+    state: touch
+    mode: '0644'
+  when: application_httpd_status.changed
+- name: Configure cron job
+  block:
+    - name: Try backup.sh
+      ansible.builtin.cron:
+        user: alpha
+        state: present
+        job: /opt/app/bin/backup.sh
+        name: Backup
+  rescue:
+    - name: Create empty binary
+      ansible.builtin.file:
+        state: touch
+        path: /opt/app/bin/backup.sh
+        mode: '0755'
+        owner: alpha
+        group: alpha
+    - name: Try backup.sh
+      ansible.builtin.cron:
+        user: alpha
+        state: present
+        job: /opt/app/bin/backup.sh
+        name: Backup

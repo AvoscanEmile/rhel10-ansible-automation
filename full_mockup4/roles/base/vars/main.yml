@@ -1,0 +1,2 @@
+---
+base_chrony_server: "server 192.168.122.254 iburst"
