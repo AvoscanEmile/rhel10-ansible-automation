@@ -1,0 +1,4 @@
+127.0.0.1 localhost beta.lab.local
+{% for host in groups['all'] %}
+{{ hostvars[host]['ansible_host'] }} {{ hostvars[host]['fqdn'] | default(host) }} {{ host }} 
+{% endfor %}

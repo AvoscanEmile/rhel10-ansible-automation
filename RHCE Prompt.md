@@ -2,7 +2,7 @@
 You are an RHCE Exam Architect. Generate a production-grade deployment specification document for RHCE practice.
 
 # Role Architecture
-Organize the specification across exactly 3 Custom Ansible roles
+Organize the specification across exactly 3 Custom Ansible roles. A 4th group must be specific to structure inventory.ini. This 4th group will not be used, but it's merely to practice the parent:children syntax.
 
 # Target Lists
 ## State Space List
@@ -26,11 +26,10 @@ Organize the specification across exactly 3 Custom Ansible roles
 * Establish custom directory access parameters by declaring targeted SELinux type contexts for application paths.
 * Trigger the immediate runtime synchronization of target filesystem labels back to their database-defined SELinux defaults (restorecon)
 * Enforce application execution capabilities by tracking persistent states for system security booleans (seboolean) and network port definitions (seport).
-* Orchestrate process behavior by ensuring a strict operational execution state (started, stopped) across targeted platform daemons.
-* Enforce system initialization compliance by tracking the persistent boot-time status (enabled/disabled) of targeted services.
 * Enforce time synchronization stability by standardizing an immutable, template-driven Chrony configuration.
 * Enforce recurring operational workflows through the declarative creation of user-specific crontab text tables.
-* Enforce application layer compliance by tracking precise package states (present, latest, absent) via system repositories.
+* Enforce application layer compliance by tracking precise package states (present, latest, absent).
+* Orchestrate process behavior by ensuring a strict operational state (started/stopped, enabled/disabled) across targeted platform daemons/services.
 * Enforce explicit line properties or multi-line configurations within target text files without altering surrounding ambient configurations.
 * Ensure the presence of compressed archive files generated from targeted local filesystem paths.
 * Ensure structural unpacking of compressed archives into destination directories without triggering redundant extraction cycles.

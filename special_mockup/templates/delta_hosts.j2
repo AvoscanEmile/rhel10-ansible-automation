@@ -1,0 +1,6 @@
+# ENVIRONMENT: STAGING - MANAGED BY ANSIBLE
+127.0.0.1       localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1     localhost localhost.localdomain localhost6 localhost6.localdomain6
+{% for host in groups['all'] %}
+{{ hostvars[host]['ansible_host'] }} {{ host }}.{{ hostvars[host].env_name | default('prod') | upper }}.internal
+{% endfor %}

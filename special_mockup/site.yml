@@ -1,0 +1,1006 @@
+---
+- name: Configure basic setup and partitions across all nodes
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Ensure proper ssh key distribution across all nodes
+      ansible.posix.authorized_key:
+        key: "{{ lookup('file', 'keys/mockup_key.pub') }}"
+        user: red
+        state: present
+    - name: Ensure password-based authentication is off
+      ansible.builtin.copy:
+        content: |
+          PasswordAuthentication No
+        dest: /etc/ssh/sshd_config.d/password_auth.conf
+        mode: '0600'
+        owner: root
+        group: root
+      notify: Restart sshd
+    - name: Configure first partition
+      community.general.parted:
+        device: /dev/vdb
+        number: 1
+        part_start: 1MiB
+        part_end: 1024MiB
+        unit: MiB
+        state: present
+        label: gpt
+    - name: Configure second partition
+      community.general.parted:
+        device: /dev/vdb
+        number: 2
+        part_start: 1024MiB
+        part_end: 3500MiB
+        unit: MiB
+        flags:
+          - lvm
+        state: present
+        label: gpt
+    - name: Configure 3rd partition
+      community.general.parted:
+        device: /dev/vdb
+        number: 3
+        part_start: 3500MiB
+        part_end: 5000MiB
+        unit: MiB
+        state: present
+        label: gpt
+    - name: Ensure 4th partition does not exist
+      community.general.parted:
+        device: /dev/vdb
+        number: 4
+        state: absent
+    - name: Ensure NFS mountpoints are present
+      ansible.builtin.file:
+        state: directory
+        path: "{{ item }}"
+        mode: '0755'
+      loop:
+        - /mnt/backup
+        - /mnt/nfs_home
+    - name: Configure NFS backup mount
+      ansible.posix.mount:
+        path: /mnt/backup
+        src: 192.168.122.1:/opt/nfs/backup
+        state: mounted
+        fstype: nfs4
+    - name: Configure home backup mount
+      ansible.posix.mount:
+        path: /mnt/nfs_home
+        src: 192.168.122.1:/opt/nfs/home
+        state: mounted
+        fstype: nfs4
+    - name: Ensure SELinux is properly active across all nodes
+      ansible.posix.selinux:
+        state: enforcing
+        policy: targeted
+        update_kernel_param: true
+    - name: Ensure yum repositories are present
+      ansible.builtin.yum_repository:
+        baseurl: "{{ item.url }}"
+        name: "{{ item.name }}"
+        description: "{{ item.description }}"
+        state: present
+        gpgcheck: false
+      loop:
+        - { name: BaseOS, description: 'BaseOS CentOS10', url: http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/ }
+        - { name: AppStream, description: 'AppStream CentOS10', url: http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/ }
+    - name: Ensure firewalld is installed on all machines
+      ansible.builtin.package:
+        name: firewalld
+        state: present
+    - name: Ensure firewalld is enabled and started on all machines
+      ansible.builtin.service:
+        name: firewalld
+        state: started
+        enabled: true
+    - name: Deploy chrony.conf to all machines
+      ansible.builtin.template:
+        mode: '0644'
+        src: templates/chrony.conf.j2
+        dest: /etc/chrony.conf
+        group: root
+        owner: root
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+- name: Configure alpha
+  hosts: alpha
+  gather_facts: false
+  tasks:
+    - name: Create VG vg_app
+      community.general.lvg:
+        vg: vg_app
+        pvs:
+          - /dev/vdb1
+          - /dev/vdb2
+        state: present
+    - name: Create lv_core inside vg_app
+      community.general.lvol:
+        lv: lv_core
+        size: 1.5G
+        state: present
+        vg: vg_app
+    - name: Turn partition into swap
+      community.general.filesystem:
+        fstype: swap
+        dev: /dev/vdb3
+        state: present
+    - name: Create entry for swap in fstab
+      ansible.posix.mount:
+        path: none
+        src: /dev/vdb3
+        opts: defaults
+        fstype: swap
+        state: present
+    - name: Ensure swap is on
+      ansible.builtin.command:
+        cmd: swapon -a
+      changed_when: false
+    - name: Format lv_core
+      community.general.filesystem:
+        fstype: ext4
+        label: APP_CORE
+        state: present
+        dev: /dev/vg_app/lv_core
+    - name: Ensure existence and config of /srv/app_data, /srv/app_data/logs, and /srv/app_data/config directories
+      ansible.builtin.file:
+        state: directory
+        path: "{{ item }}"
+        mode: '0755'
+        owner: root
+        group: root
+      loop:
+        - /srv/app_data
+        - /srv/app_data/config
+        - /srv/app_data/logs
+    - name: Ensure existence and config of /srv/app_data/storage directory
+      ansible.builtin.file:
+        state: directory
+        owner: nobody
+        group: nobody
+        mode: '0770'
+        path: /srv/app_data/storage
+    - name: Configure binary simlink
+      ansible.builtin.file:
+        state: link
+        src: /opt/app/v2/bin/app-cli
+        dest: /usr/local/bin/app-cli
+        force: true
+    - name: Ensure appgroup exists
+      ansible.builtin.group:
+        name: appgroup
+        gid: 2001
+        state: present
+    - name: Ensure appuser exists and it's properly configured
+      ansible.builtin.user:
+        groups:
+          - wheel
+          - systemd-journal
+        append: true
+        uid: 2001
+        shell: /bin/bash
+        home: /home/appuser
+        password: "{{ 'password' | password_hash('sha512', 'mysalt') }}"
+        name: app_user
+        password_expire_max: 90
+        password_expire_min: 7
+        password_expire_warn: 14
+    - name: Ensure appuser has sudo
+      ansible.builtin.copy:
+        content: |
+          appuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart app.service, /usr/bin/systemctl status app.service
+        dest: /etc/sudoers.d/appuser
+        mode: '0440'
+        owner: root
+        group: root
+        validate: /usr/sbin/visudo -cf %s
+    - name: Configure secondary network interface
+      community.general.nmcli:
+        ifname: enp2s0
+        conn_name: enp2s0
+        method4: manual
+        ip4: 192.168.10.50/24
+        gw4: 192.168.10.1
+        dns4:
+          - 1.1.1.1
+          - 8.8.8.8
+        state: present
+        autoconnect: true
+        type: ethernet
+      notify: Turn on connection
+    - name: Ensure /etc/hosts is present as intended
+      ansible.builtin.template:
+        src: templates/alpha_hosts.j2
+        dest: /etc/hosts
+        mode: '0644'
+        group: root
+        owner: root
+    - name: Configure firewall properly
+      ansible.posix.firewalld:
+        zone: public
+        service: http
+        state: enabled
+        immediate: true
+        permanent: true
+    - name: Ensure folder existence
+      ansible.builtin.file:
+        state: directory
+        mode: '0655'
+        path: /custom
+        owner: root
+        group: root
+    - name: Ensure file existence
+      ansible.builtin.copy:
+        content: ""
+        dest: /custom/web_content
+        mode: '0644'
+        owner: root
+        group: root
+    - name: Ensure folder has prober SELinux permissions
+      community.general.sefcontext:
+        target: /custom(/.*)?
+        setype: httpd_sys_content_t
+        state: present
+      notify: Restore context
+    - name: Ensure http can network connect
+      ansible.posix.seboolean:
+        name: httpd_can_network_connect
+        state: true
+        persistent: true
+    - name: Ensure port is properly tagged
+      community.general.seport:
+        ports:
+          - 8081
+        proto: tcp
+        state: present
+        setype: http_port_t
+    - name: Configure log cleaning
+      ansible.builtin.cron:
+        user: root
+        weekday: SUN
+        hour: 3
+        minute: 30
+        state: present
+        name: Weekly Log Cleanup
+        job: /usr/local/bin/clean_logs.sh > /dev/null 2>&1
+    - name: Ensure httpd is installed
+      ansible.builtin.package:
+        name: httpd
+        state: present
+    - name: Ensure httpd is enabled and started
+      ansible.builtin.service:
+        name: httpd
+        state: started
+        enabled: true
+  handlers:
+    - name: Turn on connection
+      ansible.builtin.command:
+        cmd: nmcli con up enp2s0
+      changed_when: true
+    - name: Restore context
+      ansible.builtin.command:
+        cmd: restorecon -R /custom
+      changed_when: true
+- name: Configure beta
+  hosts: beta
+  gather_facts: false
+  tasks:
+    - name: Configure vg_db
+      community.general.lvg:
+        vg: vg_db
+        pvs:
+          - /dev/vdb2
+          - /dev/vdb3
+        state: present
+    - name: Configure lv_data and lv_wal
+      community.general.lvol:
+        lv: "{{ item.lv }}"
+        size: "{{ item.size }}"
+        vg: vg_db
+        state: present
+        shrink: false
+      loop:
+        - { lv: lv_data, size: 2.5G }
+        - { lv: lv_wal, size: 100%FREE }
+    - name: Ensure swapfile existence
+      ansible.builtin.command:
+        cmd: dd if=/dev/zero of=/swapfile bs=1M count=600
+        creates: /swapfile
+    - name: Set permissions on swapfile
+      ansible.builtin.file:
+        path: /swapfile
+        owner: root
+        group: root
+        mode: '0600'
+    - name: Make swapfile swap
+      community.general.filesystem:
+        fstype: swap
+        state: present
+        dev: /swapfile
+    - name: Ensure swafile is on fstab
+      ansible.posix.mount:
+        src: /swapfile
+        path: none
+        fstype: swap
+        opts: defaults
+        state: present
+    - name: Ensure all swap is on
+      ansible.builtin.command:
+        cmd: swapon -a
+      changed_when: false
+    - name: Format lv_data
+      community.general.filesystem:
+        dev: /dev/vg_db/lv_data
+        fstype: xfs
+        opts: '-b size=4096'
+        state: present
+    - name: Format lv_wal
+      community.general.filesystem:
+        dev: /dev/vg_db/lv_wal
+        fstype: ext4
+        opts: '-m 1'
+        state: present
+    - name: Symlink to enable service
+      ansible.builtin.file:
+        state: link
+        src: /usr/lib/systemd/system/custom_monitor.service
+        dest: /etc/systemd/system/multi-user.target.wants/custom_monitor.service
+        force: true
+    - name: Ensure dba group presence
+      ansible.builtin.group:
+        name: dba
+        state: present
+    - name: Ensure dbadmin is present
+      ansible.builtin.user:
+        name: dbadmin
+        groups:
+          - wheel
+          - dba
+        append: true
+        update_password: on_create
+        password: "{{ 'redhat' | password_hash('sha512', 'mysalt') }}"
+        password_expire_max: 0
+    - name: Ensure that dba has passworldless sudo
+      ansible.builtin.copy:
+        content: |
+          %dba ALL=(ALL) NOPASSWD: ALL
+        dest: /etc/sudoers.d/dba
+        mode: '0440'
+        group: root
+        owner: root
+        validate: /usr/sbin/visudo -cf %s
+    - name: Configure secondary network interface
+      community.general.nmcli:
+        ifname: enp2s0
+        conn_name: enp2s0
+        ip4:
+          - 10.0.20.10/24
+          - 10.0.20.11/24
+        gw4: 10.0.20.1
+        dns4_search:
+          - internal.example.com
+          - lab.local
+        state: present
+        type: ethernet
+      notify: Turn on connection
+    - name: Ensure proper configuration of /etc/hosts
+      ansible.builtin.template:
+        src: templates/beta_hosts.j2
+        dest: /etc/hosts
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Ensure firewalld is properly configured
+      ansible.posix.firewalld:
+        zone: internal
+        state: enabled
+        port: "{{ item }}"
+        immediate: true
+        permanent: true
+      loop:
+        - 5432/tcp
+        - 8080/tcp
+    - name: Ensure app_audit directory exists
+      ansible.builtin.file:
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+        path: /var/log/app_audit
+    - name: Ensure dummy log exists within folder
+      ansible.builtin.copy:
+        content: ""
+        dest: /var/log/app_audit/audit.log
+        mode: '0644'
+        owner: root
+        group: root
+    - name: Ensure proper SELinux context within folder
+      community.general.sefcontext:
+        setype: var_log_t
+        state: present
+        target: /var/log/app_audit(/.*)?
+      notify: Restore context
+    - name: Ensure http can connect to db
+      ansible.posix.seboolean:
+        name: httpd_can_network_connect_db
+        state: true
+        persistent: true
+    - name: Configure db ports
+      community.general.seport:
+        ports:
+          - 5443
+        proto: tcp
+        setype: mongod_port_t
+        state: present
+    - name: Ensure database_user exists
+      ansible.builtin.user:
+        name: database_user
+        state: present
+    - name: Configure cron job
+      ansible.builtin.cron:
+        user: database_user
+        state: present
+        job: /opt/db/scripts/backup.sh
+        hour: 0
+        minute: 0
+        name: Daily Database Backup
+    - name: Ensure mariadb-server is installed
+      ansible.builtin.package:
+        name: mariadb-server
+        state: present
+    - name: Ensure mariadb-server is started and enabled
+      ansible.builtin.service:
+        name: mariadb
+        state: started
+        enabled: true
+  handlers:
+    - name: Turn on connection
+      ansible.builtin.command:
+        cmd: nmcli con up enp2s0
+      changed_when: true
+    - name: Restore context
+      ansible.builtin.command:
+        cmd: restorecon -R /var/log/app_audit
+      changed_when: true
+- name: Configure gamma
+  hosts: gamma
+  gather_facts: false
+  tasks:
+    - name: Configure vg_frontend
+      community.general.lvg:
+        vg: vg_frontend
+        pvs:
+          - /dev/vdb1
+        state: present
+    - name: Configure lv_assets
+      community.general.lvol:
+        lv: lv_assets
+        vg: vg_frontend
+        state: present
+        size: 100%VG
+    - name: Configure vg_backend
+      community.general.lvg:
+        vg: vg_backend
+        state: present
+        pvs:
+          - /dev/vdb2
+          - /dev/vdb3
+    - name: Configure lv_store
+      community.general.lvol:
+        lv: lv_store
+        size: 2G
+        state: present
+        vg: vg_backend
+    - name: Configure lv_swap
+      community.general.lvol:
+        lv: lv_swap
+        vg: vg_backend
+        state: present
+        size: 1G
+    - name: Format lv_swap as swap
+      community.general.filesystem:
+        fstype: swap
+        dev: /dev/vg_backend/lv_swap
+        state: present
+    - name: Ensure lv_swap is present on fstab
+      ansible.posix.mount:
+        src: /dev/vg_backend/lv_swap
+        fstype: swap
+        path: none
+        opts: defaults
+        state: present
+    - name: Ensure swap is on
+      ansible.builtin.command:
+        cmd: swapon -a
+      changed_when: false
+    - name: Format lv_assets
+      community.general.filesystem:
+        dev: /dev/vg_frontend/lv_assets
+        fstype: ext4
+        label: FE_ASSETS
+        state: present
+    - name: Format lv_store
+      community.general.filesystem:
+        dev: /dev/vg_backend/lv_store
+        fstype: xfs
+        label: BE_STORE
+        state: present
+    - name: Ensure legacy folders are absent
+      ansible.builtin.file:
+        state: absent
+        path: "{{ item }}"
+        force: true
+      loop:
+        - /var/log/legacy_app
+        - /tmp/app_build
+    - name: Ensure svc_monitor group exists
+      ansible.builtin.group:
+        name: svc_monitor
+        state: present
+    - name: Ensure sv_monitor user exists
+      ansible.builtin.user:
+        name: sv_monitor
+        shell: /usr/sbin/nologin
+        home: /var/lib/sv_monitor
+        groups:
+          - svc_monitor
+          - adm
+          - disk
+        append: true
+        password_lock: true
+    - name: Ensure svc_monitor group has password sudo
+      ansible.builtin.copy:
+        content: |
+          %svc_monitor ALL=(ALL) PASSWD: /usr/bin/journalctl, /usr/bin/dmesg
+        dest: /etc/sudoers.d/svc_monitor
+        mode: '0440'
+        validate: visudo -cf %s
+        group: root
+        owner: root
+    - name: Configure secondary interface
+      community.general.nmcli:
+        ifname: enp2s0
+        conn_name: enp2s0
+        state: present
+        type: ethernet
+        method4: manual
+        ip4:
+          - 172.16.50.10/24
+        gw4: 172.16.50.1
+        route_metric4: 50
+        routes4_extended:
+          - ip: '19.100.0.0/16'
+            metric: 100
+            next_hop: '172.16.50.254'
+      notify: Turn on connection
+    # - name: Configure /etc/hosts properly
+    #   ansible.builtin.template:
+    #     src: templates/gamma_hosts.j2
+    #     dest: /etc/hosts
+    #     mode: '0644'
+    #     group: root
+    #     owner: root
+    - name: Ensure firewalld is properly configured
+      ansible.posix.firewalld:
+        zone: external
+        service: "{{ item }}"
+        state: disabled
+      loop:
+        - ssh
+        - cockpit
+    - name: Ensure folder exists
+      ansible.builtin.file:
+        state: directory
+        mode: '0755'
+        group: root
+        owner: root
+        path: /srv/mariadb_data
+    - name: Ensure dummy file exists
+      ansible.builtin.copy:
+        content: ""
+        dest: /srv/mariadb_data/ibdata1
+        mode: '0644'
+        owner: root
+        group: root
+    - name: Ensure proper SELinux context
+      community.general.sefcontext:
+        target: /srv/mariadb_data(/.*)?
+        setype: mysqld_db_t
+        state: present
+      notify: Restore Context
+    - name: Ensure ftp can annon write
+      ansible.posix.seboolean:
+        name: ftpd_anon_write
+        state: true
+        persistent: true
+    - name: Ensure proper ftp port config
+      community.general.seport:
+        ports:
+          - 2121
+        proto: tcp
+        setype: ftp_port_t
+        state: present
+    - name: Ensure developer user exists
+      ansible.builtin.user:
+        name: developer
+        state: present
+    - name: Ensure cronjob exists
+      ansible.builtin.cron:
+        name: Weekday git sync
+        state: present
+        job: /usr/sbin/project_sync.sh
+        user: developer
+        minute: '*/15'
+        weekday: MON-FRI
+    - name: Ensure vsftpd is installed
+      ansible.builtin.package:
+        name: vsftpd
+        state: absent
+  handlers:
+    - name: Turn on connection
+      ansible.builtin.command:
+        cmd: nmcli con up enp2s0
+      changed_when: true
+    - name: Restore Context
+      ansible.builtin.command:
+        cmd: restorecon -R /srv/mariadb_data
+      changed_when: true
+- name: Configure delta
+  hosts: delta
+  gather_facts: false
+  tasks:
+    - name: Ensure vg_analytics exists
+      community.general.lvg:
+        vg: vg_analytics
+        pvs:
+          - /dev/vdb1
+          - /dev/vdb2
+          - /dev/vdb3
+        state: present
+    - name: Ensure presence of LVs
+      community.general.lvol:
+        lv: "{{ item.lv }}"
+        size: "{{ item.size }}"
+        vg: vg_analytics
+        state: present
+        shrink: false
+      loop:
+        - { lv: 'lv_proc', size: '60%VG' }
+        - { lv: 'lv_scratch', size: '500M' }
+        - { lv: 'lv_swap', size: '100M' }
+    - name: Ensure lv_old_cache is absent
+      community.general.lvol:
+        lv: lv_old_cache
+        vg: vg_analytics
+        state: absent
+    - name: Make partition into swap
+      community.general.filesystem:
+        dev: /dev/vg_analytics/lv_swap
+        fstype: swap
+        state: present
+    - name: Make sure partition is present in fstab
+      ansible.posix.mount:
+        src: /dev/vg_analytics/lv_swap
+        state: present
+        opts: defaults,pri=10
+        path: none
+        fstype: swap
+    - name: Ensure swap is on
+      ansible.builtin.command:
+        cmd: swapon -a
+      changed_when: false
+    - name: Format lv_assets
+      community.general.filesystem:
+        dev: /dev/vg_analytics/lv_proc
+        fstype: xfs
+        state: present
+    - name: Format lv_scratch
+      community.general.filesystem:
+        dev: /dev/vg_analytics/lv_scratch
+        fstype: ext4
+        state: present
+        opts: '-m 0 -i 8192'
+    - name: Ensure sys_health.sh exists
+      ansible.builtin.copy:
+        dest: /usr/local/bin/sys_health.sh
+        force: false
+        owner: root
+        group: root
+        mode: '0755'
+        content: ""
+    - name: Ensure link to binary exists
+      ansible.builtin.file:
+        state: link
+        src: /usr/local/bin/sys_health.sh
+        dest: /usr/local/sbin/check_health
+    - name: Configure log storage redirection
+      ansible.builtin.file:
+        state: link
+        src: /srv/logs/audit_archive
+        dest: /var/log/audit_link
+        force: true
+    - name: Ensure presence of analytics group
+      ansible.builtin.group:
+        gid: 1050
+        state: present
+        name: analytics
+    - name: Ensure presence of anal user
+      ansible.builtin.user:
+        name: anal
+        state: present
+        group: analytics
+        uid: 1051
+        shell: /bin/bash
+        home: /home/analytics
+        password: "{{ 'mypassword' | password_hash('sha512', 'myfixedsalt12345') }}"
+        password_expire_max: 60
+        create_home: true
+        update_password: on_create
+    - name: Ensure non-root sudo
+      ansible.builtin.copy:
+        content: |
+          %analytics ALL=(nobody) NOPASSWD: ALL
+        dest: /etc/sudoers.d/analytics
+        mode: '0440'
+        owner: root
+        group: root
+        validate: /usr/sbin/visudo -cf %s
+    - name: Configure secondary network interface
+      community.general.nmcli:
+        state: present
+        type: ethernet
+        ifname: enp2s0
+        conn_name: enp2s0
+        method4: manual
+        ip4:
+          - 192.168.100.25/24
+        gw4: 192.168.100.1
+        dns4:
+          - 10.0.0.53
+        dns4_ignore_auto: true
+      notify: Turn on connection
+    - name: Configure /etc/hosts properly
+      ansible.builtin.template:
+        src: templates/delta_hosts.j2
+        dest: /etc/hosts
+        mode: '0644'
+        group: root
+        owner: root
+    - name: Ensure proper firewall configuration
+      ansible.posix.firewalld:
+        zone: dmz
+        state: enabled
+        interface: enp2s0
+        permanent: true
+        immediate: true
+    - name: Ensure folder existence
+      ansible.builtin.file:
+        state: directory
+        mode: '0755'
+        path: /kvm/images
+        group: root
+        owner: root
+    - name: Ensure dummy file is present
+      ansible.builtin.copy:
+        content: ""
+        mode: '0644'
+        dest: /kvm/images/disk01.qcow2
+        group: root
+        owner: root
+    - name: Ensure proper fcontext
+      community.general.sefcontext:
+        target: /kvm/images(/.*)?
+        setype: virt_image_t
+        state: present
+      notify: Restore Context
+    - name: Ensure virtualization services can access nfs
+      ansible.posix.seboolean:
+        name: virt_use_nfs
+        state: true
+        persistent: true
+    - name: Ensure proper virt port
+      community.general.seport:
+        ports:
+          - 5905
+        proto: tcp
+        state: present
+        setype: virt_port_t
+    - name: Ensure cron job
+      ansible.builtin.cron:
+        minute: '*/5'
+        state: present
+        name: System Health Reporting
+        job: /usr/libexec/sys-reporter --format json
+        user: root
+    - name: Ensure squid is installed
+      ansible.builtin.package:
+        name: squid
+        state: present
+    - name: Ensure squid is started and enabled
+      ansible.builtin.service:
+        name: squid
+        state: started
+        enabled: true
+  handlers:
+    - name: Turn on connection
+      ansible.builtin.command:
+        cmd: nmcli con up enp2s0
+      changed_when: true
+    - name: Restore Context
+      ansible.builtin.command:
+        cmd: restorecon -R /kvm/images
+      changed_when: true
+- name: Configure epsilon
+  hosts: epsilon
+  gather_facts: false
+  tasks:
+    - name: Configure vg_web
+      community.general.lvg:
+        vg: vg_web
+        pvs:
+          - /dev/vdb2
+        state: present
+        pesize: 8M
+    - name: Configure lv_root
+      community.general.lvol:
+        lv: lv_root
+        vg: vg_web
+        size: 100%VG
+        state: present
+    - name: Ensure /dev/vdb1 is deactivated as swap
+      ansible.builtin.command:
+        cmd: swapoff /dev/vdb1
+      changed_when: false
+      failed_when: false
+    - name: Ensure /dev/vdb1 as swap is absent from fstab
+      ansible.posix.mount:
+        src: /dev/vdb1
+        fstype: swap
+        path: none
+        state: absent
+    - name: Format lv_root
+      community.general.filesystem:
+        dev: /dev/vg_web/lv_root
+        fstype: ext4
+        label: WEB_ROOT
+        state: present
+    - name: Format vdb1
+      community.general.filesystem:
+        dev: /dev/vdb1
+        state: present
+        fstype: xfs
+    - name: Ensure vdb3 has no signatures
+      community.general.filesystem:
+        dev: /dev/vdb3
+        state: absent
+    - name: Check for folder with improper permissions
+      ansible.builtin.command:
+        cmd: 'find /var/log -type d ! -perm 0755'
+      register: incorrect_dirs
+      changed_when: false
+    - name: Check for files with improper permissions
+      ansible.builtin.command:
+        cmd: 'find /var/log -type f ! -perm 0644'
+      register: incorrect_files
+      changed_when: false
+    - name: Ensure proper folder permission
+      ansible.builtin.command:
+        cmd: 'find /var/log -type d ! -perm 0755 -exec chmod 0755 {} +'
+      changed_when: true
+      when: incorrect_dirs.stdout != ""
+    - name: Ensure proper file permission
+      ansible.builtin.command:
+        cmd: 'find /var/log -type f ! -perm 0644 -exec chmod 0644 {} +'
+      changed_when: true
+      when: incorrect_files.stdout != ""
+    - name: Shared Library config
+      ansible.builtin.file:
+        src: /usr/local/lib/libcustom.so.1.4.0
+        dest: /usr/local/lib/libcustom.so.1
+        state: link
+        force: true
+    - name: Ensure legacy_dev is completely absent
+      ansible.builtin.user:
+        name: legacy_dev
+        state: absent
+    - name: Ensure home directory does not exist
+      ansible.builtin.file:
+        path: /home/legacy_dev
+        state: absent
+    - name: Ensure dev_contractors group is absent
+      ansible.builtin.group:
+        name: dev_contractors
+        state: absent
+    - name: Ensure sudoers file is absent
+      ansible.builtin.file:
+        path: /etc/sudoers.d/50_legacy_dev
+        state: absent
+    - name: Ensure includir is present within sudoers
+      ansible.builtin.lineinfile:
+        line: '#includedir /etc/sudoers.d'
+        state: present
+        path: /etc/sudoers
+    - name: Ensure legacy connection is removed
+      community.general.nmcli:
+        ifname: enp2s0
+        conn_name: enp2s0-legacy-dhcp
+        state: absent
+    - name: Ensure proper connection is present
+      community.general.nmcli:
+        ifname: enp2s0
+        conn_name: enp2s0
+        state: present
+        type: ethernet
+        method4: manual
+        ip4:
+          - 10.50.1.10/24
+        gw4: 10.50.1.1
+      notify: Turn on connection
+    - name: Ensure /etc/hosts is properly configured
+      ansible.builtin.template:
+        dest: /etc/hosts
+        src: templates/epsilon_hosts.j2
+        mode: '0644'
+        group: root
+        owner: root
+    - name: Ensure firewall is properly configured
+      ansible.posix.firewalld:
+        zone: trusted
+        port: 6000-6005/udp
+        state: enabled
+        immediate: true
+        permanent: true
+    - name: Ensure folder exists
+      ansible.builtin.file:
+        state: directory
+        group: root
+        owner: root
+        mode: '0755'
+        path: /home/automation/.ssh
+    - name: Ensure dummy file exists
+      ansible.builtin.copy:
+        content: ""
+        group: root
+        owner: root
+        mode: '0644'
+        dest: /home/automation/.ssh/authorized_keys
+    - name: Ensure proper context
+      community.general.sefcontext:
+        target: /home/automation/.ssh(/.*)?
+        setype: ssh_home_t
+        state: present
+      notify: Restore Context
+    - name: Ensure ssh admin logig is allowed
+      ansible.posix.seboolean:
+        name: ssh_sysadm_login
+        state: true
+        persistent: true
+    - name: Ensure port 2222 is allowed for ssh
+      community.general.seport:
+        ports:
+          - 2222
+        proto: tcp
+        setype: ssh_port_t
+        state: present
+    - name: Ensure Cron Job
+      ansible.builtin.cron:
+        name: Old Data Sync
+        state: absent
+        user: root
+    - name: Ensure cockpit is installed
+      ansible.builtin.package:
+        name: cockpit
+        state: present
+  handlers:
+    - name: Turn on connection
+      ansible.builtin.command:
+        cmd: nmcli con up enp2s0
+      changed_when: true
+    - name: Restore Context
+      ansible.builtin.command:
+        cmd: restorecon -R /home/automation
+      changed_when: true
