@@ -1,0 +1,88 @@
+---
+- name: Ensure repo access
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Ensure yum repositories are present
+      ansible.builtin.yum_repository:
+        baseurl: "{{ item.url }}"
+        name: "{{ item.name }}"
+        description: "{{ item.description }}"
+        state: present
+        gpgcheck: false
+      loop:
+        - { name: BaseOS, description: 'BaseOS CentOS10', url: http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/ }
+        - { name: AppStream, description: 'AppStream CentOS10', url: http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/ }
+- name: Configure timesync
+  hosts: all
+  gather_facts: false
+  vars:
+    timesync_ntp_servers:
+      - hostname: 10.10.10.254
+        iburst: true
+  roles:
+    - linux-system-roles.timesync
+- name: Configure selinux
+  hosts: all
+  gather_facts: false
+  vars:
+    selinux_policy: targeted
+    selinux_state: enforcing
+    selinux_booleans:
+      - name: container_manage_cgroup
+        state: true
+        persistent: true
+    selinux_fcontexts:
+      - target: '/opt/app/data(/.*)?'
+        setype: httpd_sys_content_t
+        ftype: d
+        state: present
+  roles:
+    - linux-system-roles.selinux
+- name: Configure network role
+  hosts: alpha
+  gather_facts: false
+  vars:
+    network_connections:
+      - name: data-fabric
+        state: up
+        type: ethernet
+        interface_name: enp2s0
+        ip:
+          address:
+            - 10.10.20.50/24
+          gateway4: 10.10.20.1
+          auto6: false
+  roles:
+    - linux-system-roles.network
+- name: Configure storage role
+  hosts: all
+  gather_facts: false
+  vars:
+    storage_pools:
+      - name: vg_practice
+        type: lvm
+        state: present
+        disks:
+          - /dev/vdb
+        volumes:
+          - name: lv_data
+            size: 5GiB
+            fs_type: xfs
+            mount_point: /mnt/data
+            state: present
+  roles:
+    - linux-system-roles.storage
+- name: Configure firewall
+  hosts: all
+  gather_facts: false
+  vars:
+    firewall:
+      - zone: public
+        service: ssh
+        state: enabled
+        permanent: true
+        runtime: true
+        port: 8080/tcp
+  roles:
+    - linux-system-roles.firewall

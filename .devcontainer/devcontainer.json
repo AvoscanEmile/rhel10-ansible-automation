@@ -29,5 +29,5 @@
   "mounts": [
     "source=/srv/git,target=/srv/git,type=bind"
   ],
-  "postCreateCommand": "mkdir -p /root/.ssh && echo -e 'Host 192.168.122.*\n\tStrictHostKeyChecking no\n\tUserKnownHostsFile /dev/null\n\tLogLevel ERROR' > /root/.ssh/config && chmod 600 /root/.ssh/config && ansible-galaxy collection install community.general && podman build -t custom-ee -f Containerfile ."
+  "postCreateCommand": "sed -i 's/tsflags=nodocs//g' /etc/dnf/dnf.conf && mkdir -p /root/.ssh && echo -e 'Host 192.168.122.*\n\tStrictHostKeyChecking no\n\tUserKnownHostsFile /dev/null\n\tLogLevel ERROR' > /root/.ssh/config && chmod 600 /root/.ssh/config && ansible-galaxy collection install community.general && podman build -t custom-ee -f Containerfile ."
 }
