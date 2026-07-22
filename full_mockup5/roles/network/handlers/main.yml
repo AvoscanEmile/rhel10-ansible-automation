@@ -1,0 +1,17 @@
+---
+- name: Bring enp2s0 up
+  ansible.builtin.command:
+    cmd: nmcli con up enp2s0
+  changed_when: true
+- name: Restart firewalld
+  ansible.builtin.service:
+    name: firewalld
+    state: restarted
+- name: Restore custom_site context
+  ansible.builtin.command:
+    cmd: restorecon -R /var/www/custom_site
+  changed_when: true
+- name: Restart chronyd
+  ansible.builtin.service:
+    name: chronyd
+    state: restarted

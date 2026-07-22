@@ -1,0 +1,49 @@
+---
+- name: Configure production nodes
+  hosts: production
+  gather_facts: false
+  tasks:
+    - name: Distribute keys to all nodes
+      ansible.posix.authorized_key:
+        key: "{{ lookup('file', 'keys/mockup_key.pub') }}"
+        user: red
+        state: present
+    - name: Ensure PasswordAuth is disabled
+      ansible.builtin.copy:
+        content: |
+          PasswordAuthentication no
+        dest: /etc/ssh/sshd_config.d/auth.conf
+        mode: '0600'
+        group: root
+        owner: root
+      notify: Restart sshd
+    - name: Configure repositories
+      ansible.builtin.yum_repository:
+        name: "{{ item.name }}"
+        description: "{{ item.description }}"
+        baseurl: "{{ item.url }}"
+        state: present
+        gpgcheck: false
+      loop:
+        - { name: BaseOS, description: BaseOS, url: http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/ }
+        - { name: AppStream, description: AppStream, url: http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/ }
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+- name: Configure storage role
+  hosts: storage
+  gather_facts: false
+  roles:
+    - storage
+- name: Configure network role
+  hosts: network
+  gather_facts: true
+  roles:
+    - network
+- name: Configure maintenance role
+  hosts: maintenance
+  gather_facts: false
+  roles:
+    - maintenance

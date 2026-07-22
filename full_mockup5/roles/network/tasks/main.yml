@@ -1,0 +1,104 @@
+---
+- name: Enforce proper interface configuration
+  community.general.nmcli:
+    conn_name: enp2s0
+    ifname: enp2s0
+    ip4:
+      - 10.0.2.50/24
+    gw4: 10.0.2.1
+    state: present
+    type: ethernet
+  when: '"enp2s0" in ansible_facts.interfaces'
+  notify: Bring enp2s0 up
+- name: Configure host resolution file properly
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    mode: '0644'
+    group: root
+    owner: root
+- name: Ensure firewall is installed
+  ansible.builtin.package:
+    name: firewalld
+    state: present
+- name: Ensure firewalld is enabled and running
+  ansible.builtin.service:
+    name: firewalld
+    state: started
+    enabled: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    interface: enp2s0
+    state: enabled
+    permanent: true
+    immediate: true
+  notify: Restart firewalld
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    port: 8843/tcp
+    state: enabled
+    permanent: true
+    immediate: true
+  notify: Restart firewalld
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    service: http
+    state: enabled
+    permanent: true
+    immediate: true
+  notify: Restart firewalld
+- name: Make sure SELinux is enforcing
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+- name: Ensure custom_site folder exists
+  ansible.builtin.file:
+    state: directory
+    path: /var/www/custom_site
+    mode: '0755'
+    owner: root
+    group: root
+- name: Configure properly setype for custom_site
+  community.general.sefcontext:
+    setype: httpd_sys_content_t
+    state: present
+    path: /var/www/custom_site(/.*)?
+  notify: Restore custom_site context
+- name: Ensure httpd can network connect
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+- name: Configure seport
+  block:
+    - name: Try http_port_t with 8443/tcp
+      community.general.seport:
+        ports:
+          - 8443
+        proto: tcp
+        state: present
+        setype: http_port_t
+  rescue:
+    - name: Try 8200
+      community.general.seport:
+        ports:
+          - 8443
+        proto: tcp
+        state: present
+        setype: http_port_t
+  always:
+    - name: Append run to log
+      ansible.builtin.command:
+        cmd: echo "Attemtped seport cofig" >> /var/log/selinux_config.log
+      changed_when: false
+- name: Ensure chrony.conf is properly set
+  ansible.builtin.template:
+    src: chrony.conf.j2
+    dest: /etc/chrony.conf
+    mode: '0644'
+    owner: root
+    group: root
+  notify: Restart chronyd

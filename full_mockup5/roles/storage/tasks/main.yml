@@ -1,0 +1,98 @@
+---
+- name: Configure partitions
+  community.general.parted:
+    number: "{{ item.number }}"
+    state: present
+    part_start: "{{ item.start }}"
+    part_end: "{{ item.end }}"
+    device: /dev/vdb
+  loop:
+    - { number: 1, start: 1MiB, end: 2049MiB }
+    - { number: 2, start: 2049MiB, end: 3073MiB }
+    - { number: 3, start: 3073MiB, end: 4097MiB }
+- name: Configure VG from vdb1
+  community.general.lvg:
+    pvs:
+      - /dev/vdb1
+    vg: vg_data
+    state: present
+- name: Configure LV from vg_data
+  community.general.lvol:
+    lv: lv_app
+    vg: vg_data
+    size: 1G
+  register: storage_lv_state_result
+- name: Format filessytems
+  community.general.filesystem:
+    dev: "{{ item.device }}"
+    fstype: "{{ item.fstype }}"
+    state: present
+  loop:
+    - { device: /dev/vg_data/lv_app, fstype: xfs }
+    - { device: /dev/vdb2, fstype: ext4 }
+    - { device: /dev/vdb3, fstype: swap }
+- name: Get UUID of /dev/vdb3
+  ansible.builtin.command:
+    cmd: lsblk -no UUID /dev/vdb3
+  register: storage_swap_uuid
+  changed_when: false
+- name: Add swap to fstab
+  ansible.posix.mount:
+    path: none
+    src: "UUID={{ storage_swap_uuid.stdout }}"
+    fstype: swap
+    opts: defaults
+    state: present
+- name: Make sure swap is on
+  ansible.builtin.command:
+    cmd: swapon -a
+  changed_when: false
+- name: Make sure mount directories for NFS are present
+  ansible.builtin.file:
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+    path: "{{ item }}"
+  loop:
+    - /mnt/nfs/backup
+    - /mnt/nfs/home
+- name: Collect facts
+  ansible.builtin.setup:
+- name: Ensure NFS shares are properly mounted
+  ansible.posix.mount:
+    src: "{{ item.src }}"
+    path: "{{ item.path }}"
+    state: mounted
+    fstype: nfs4
+  loop:
+    - { src: 192.168.122.1:/opt/nfs/backup, path: /mnt/nfs/backup }
+    - { src: 192.168.122.1:/opt/nfs/home, path: /mnt/nfs/home }
+  when: ansible_facts['os_family'] == 'RedHat'
+- name: Configure user accounts
+  ansible.builtin.user:
+    append: true
+    groups:
+      - wheel
+    state: present
+    user: "{{ item }}"
+    password: "{{ 'redhat' | password_hash('sha512', 'mysalt') }}"
+    password_expire_max: 90
+  loop:
+    - devops_admin
+    - audit_user
+- name: Ensure devops_admin has passwordless systemctl
+  ansible.builtin.copy:
+    content: |
+      devops_admin ALL=(ALL) NOPASSWD: /usr/bin/systemctl
+    dest: /etc/sudoers.d/devops
+    mode: '0644'
+    owner: root
+    group: root
+- name: Ensure directory exists with proper ownership
+  ansible.builtin.file:
+    state: directory
+    mode: 'u=rwX,g=rX,o=rX'
+    path: /srv/appdata
+    owner: devops_admin
+    group: wheel

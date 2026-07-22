@@ -1,0 +1,74 @@
+---
+- name: Ensure packages are properly configured
+  ansible.builtin.package:
+    name: "{{ item.name }}"
+    state: "{{ item.state }}"
+  loop:
+    - { name: httpd, state: latest }
+    - { name: firewalld, state: present }
+    - { name: mariadb-server, state: present }
+    - { name: telnet-server, state: absent }
+    - { name: rsync, state: present }
+- name: Ensure services are properly enabled
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - httpd
+    - firewalld
+- name: Ensure devops_admin user exists
+  ansible.builtin.user:
+    name: devops_admin
+    state: present
+- name: Ensure folder exists
+  ansible.builtin.file:
+    state: directory
+    path: /var/www/custom_site
+    mode: 'u=rwX,g=rX,o=rX'
+    owner: devops_admin
+    group: wheel
+- name: Ensure link is properly configured
+  ansible.builtin.file:
+    state: link
+    path: /var/www/html/latest_config
+    src: /etc/hosts
+    force: true
+- name: Create cron entry
+  ansible.builtin.cron:
+    job: /usr/local/bin/backup.sh
+    hour: 2
+    minute: 30
+    user: devops_admin
+    state: present
+    name: Backup job
+- name: Ensure httpd.conf is properly configured
+  ansible.builtin.lineinfile:
+    regexp: Listen
+    line: Listen 8443
+    state: present
+    path: /etc/httpd/conf/httpd.conf
+- name: Ensure folder exists
+  ansible.builtin.file:
+    state: directory
+    path: "{{ item }}"
+    mode: '0755'
+    group: root
+    owner: root
+  loop:
+    - /root/backup
+    - /tmp/restore_test
+- name: Archive custom_site
+  community.general.archive:
+    path:
+      - /etc
+    dest: /root/backup/site_backup.tar.gz
+    format: gz
+    mode: '0644'
+    owner: root
+    group: root
+- name: Extract archive to /tmp
+  ansible.builtin.unarchive:
+    remote_src: true
+    src: /root/backup/site_backup.tar.gz
+    dest: /tmp/restore_test
