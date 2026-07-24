@@ -1,0 +1,96 @@
+---
+- name: Ensure passwordless auth only
+  ansible.builtin.copy:
+    content: |
+      PasswordAuthentication No
+    dest: /etc/ssh/sshd_config.d/auth.conf
+    mode: '0644'
+    owner: root
+    group: root
+  notify: Restart sshd
+- name: Configure repositories
+  ansible.builtin.yum_repository:
+    baseurl: "{{ item.url }}"
+    description: "{{ item.description }}"
+    name: "{{ item.name }}"
+    gpgcheck: false
+    state: present
+  loop:
+    - { name: BaseOS, description: BaseOS, url: http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/ }
+    - { name: AppStream, description: AppStream, url: http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/ }
+- name: Ensure package presence
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - chrony
+    - rsyslog
+    - tar
+    - firewalld
+    - cockpit
+- name: Ensure tmpwatch absent
+  ansible.builtin.package:
+    name: tmpwatch
+    state: absent
+- name: Configure /etc/hosts
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    mode: '0644'
+    group: root
+    owner: root
+- name: Ensure chrony is properly configured
+  ansible.builtin.template:
+    src: chrony.j2
+    dest: /etc/chrony.conf
+    mode: '0644'
+    group: root
+    owner: root
+  notify: Restart chronyd
+- name: Ensure selinux is enforcing
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+- name: Ensure sysadmins users exists and its properly configured
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    state: present
+    password: "{{ 'redhat' | password_hash(hashtype='sha512', salt='mysalt') }}"
+    uid: "{{ item.uid }}"
+    password_expire_max: 90
+    groups:
+      - wheel
+    append: true
+  loop:
+    - { name: sysadmin_user, uid: 1500 }
+    - { name: audit_user, uid: 1501 }
+- name: Ensure archive directory exists
+  ansible.builtin.file:
+    state: directory
+    mode: '0750'
+    owner: sysadmin_user
+    group: wheel
+    path: /var/log/audit_archive
+- name: Ensure sysadmin has passwordless sudo
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/99_sysadmin
+    content: |
+      sysadmin_user ALL=(ALL) NOPASSWD: ALL
+    mode: '0440'
+    group: root
+    owner: root
+- name: Create cronjob for 2AM
+  ansible.builtin.cron:
+    hour: 2
+    minute: 0
+    state: present
+    user: sysadmin_user
+    job: /usr/local/bin/system_audit.sh
+    name: System Audit job
+- name: Ensure permite root login is not allowed within sshd
+  ansible.builtin.lineinfile:
+    regexp: PermitRootLogin
+    line: PermitRootLogin no
+    state: present
+    path: /etc/ssh/sshd_config
+  notify: Restart sshd

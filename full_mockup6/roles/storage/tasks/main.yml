@@ -1,0 +1,80 @@
+---
+- name: Configure partitions
+  community.general.parted:
+    device: /dev/vdb
+    number: "{{ item.number }}"
+    part_start: "{{ item.start }}"
+    part_end: "{{ item.end }}"
+    state: present
+  loop:
+    - { number: 1, start: 1MiB, end: 2049MiB }
+    - { number: 2, start: 2049MiB, end: 4097MiB }
+- name: Configure VG
+  community.general.lvg:
+    vg: vg_data
+    pvs:
+      - /dev/vdb1
+    state: present
+- name: Configure LV
+  community.general.lvol:
+    lv: "{{ item.lvname }}"
+    size: "{{ item.size }}"
+    state: present
+    vg: vg_data
+  loop:
+    - { lvname: lv_app, size: 1.5G }
+    - { lvname: lv_swap, size: 500M }
+- name: Configure filesystems
+  community.general.filesystem:
+    fstype: "{{ item.fstype }}"
+    dev: "{{ item.dev }}"
+    state: present
+  loop:
+    - { fstype: xfs, dev: /dev/vg_data/lv_app }
+    - { fstype: swap, dev: /dev/vg_data/lv_swap }
+    - { fstype: ext4, dev: /dev/vdb2 }
+- name: Ensure mount directories are present
+  ansible.builtin.file:
+    state: directory
+    path: "{{ item }}"
+    mode: '0755'
+    owner: root
+    group: root
+  loop:
+    - /mnt/xfs_app
+    - /mnt/ext4_data
+    - /mnt/nfs_backup
+    - /mnt/nfs_home
+- name: Mount filesystems
+  ansible.posix.mount:
+    src: "{{ item.src }}"
+    path: "{{ item.path }}"
+    fstype: "{{ item.fstype }}"
+    opts: defaults
+    state: mounted
+  loop:
+    - { src: /dev/vg_data/lv_app, path: /mnt/xfs_app, fstype: xfs }
+    - { src: /dev/vdb2, path: /mnt/ext4_data, fstype: ext4 }
+    - { src: 192.168.122.1:/opt/nfs/backup, path: /mnt/nfs_backup, fstype: nfs4 }
+    - { src: 192.168.122.1:/opt/nfs/home, path: /mnt/nfs_home, fstype: nfs4 }
+- name: Ensure swap is present in fstab
+  ansible.posix.mount:
+    src: /dev/vg_data/lv_swap
+    path: none
+    fstype: swap
+    opts: defaults
+    state: present
+  notify: Turn on swap
+- name: Configure secondary interface
+  community.general.nmcli:
+    conn_name: enp2s0
+    ifname: enp2s0
+    type: ethernet
+    ip4:
+      - 172.16.10.13/24
+    gw4: 172.16.10.1
+    dns4:
+      - 172.16.10.1
+    state: present
+    method4: manual
+  notify: Bring enp2s0 connection up

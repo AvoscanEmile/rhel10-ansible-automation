@@ -1,0 +1,110 @@
+---
+- name: Ensure httpd is installed
+  ansible.builtin.package:
+    name: httpd
+    state: present
+- name: Ensure basic services are running
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - httpd
+    - firewalld
+- name: Configure public firewalld zone
+  ansible.posix.firewalld:
+    zone: public
+    interface: enp2s0
+    state: enabled
+    immediate: true
+    permanent: true
+- name: Configure public firewalld zone
+  ansible.posix.firewalld:
+    zone: public
+    service: http
+    state: enabled
+    immediate: true
+    permanent: true
+- name: Configure public firewalld zone
+  ansible.posix.firewalld:
+    zone: public
+    port: 8080/tcp
+    state: enabled
+    immediate: true
+    permanent: true
+- name: Ensure directories have proper permissions
+  ansible.builtin.file:
+    state: directory
+    mode: 'u=rwX,g=rX,o=rX'
+    group: apache
+    owner: apache
+    path: "{{ item }}"
+  loop:
+    - /var/www/html
+    - /var/www/html/releases/v1.0
+    - /srv/web_data
+    - /srv/app_release/
+    - /var/backups
+- name: Configure symlink
+  ansible.builtin.file:
+    state: link
+    dest: /var/www/html_current
+    src: /var/www/html/releases/v1.0
+    force: true
+- name: Configure sefcontext of /srv/web_data
+  community.general.sefcontext:
+    setype: httpd_sys_content_t
+    path: /srv/web_data(/.*)?
+    state: present
+  notify: Restore /srv/web_data context
+- name: Ensure httpd can network connect
+  ansible.posix.seboolean:
+    persistent: true
+    name: httpd_can_network_connect
+    state: true
+- name: Ensure http port is allowed through
+  community.general.seport:
+    ports:
+      - 8080
+    proto: tcp
+    state: present
+    setype: http_port_t
+- name: Archive httpd folder
+  community.general.archive:
+    path:
+      - /etc/httpd
+    dest: /var/backups/web_config.tar.gz
+    format: gz
+    mode: '0644'
+    group: root
+    owner: root
+  register: web_backup_result
+- name: Verify extraction status
+  ansible.builtin.stat:
+    path: /srv/app_release/.extracted
+  register: web_marker_file
+- name: Unarchive folder
+  ansible.builtin.unarchive:
+    remote_src: true
+    src: /var/backups/web_config.tar.gz
+    dest: /srv/app_release/
+  when:
+    - web_backup_result is defined
+    - not web_marker_file.stat.exists
+  notify: Create marker file
+- name: Ensure target role has rsync installed
+  ansible.builtin.package:
+    name: rsync
+    state: present
+- name: Ensure target sync folder exists
+  ansible.builtin.file:
+    state: directory
+    path: /tmp/ee_sync_test
+    owner: red
+    group: red
+    mode: "u=rwX,g=rX,o=rX"
+- name: Test sync from EE
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/files/test_sync/"
+    dest: /tmp/ee_sync_test/
+  become: false

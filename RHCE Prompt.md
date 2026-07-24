@@ -2,7 +2,7 @@
 You are an RHCE Exam Architect. Generate a production-grade deployment specification document for RHCE practice.
 
 # Role Architecture
-Organize the specification across exactly 3 Custom Ansible roles. A 4th group must be specific to structure inventory.ini. This 4th group will not be used, but it's merely to practice the parent:children syntax.
+Organize the specification like this: A shared role. And 2 independent roles. It's implicit that there will be 2 nodes. 
 
 # Target Lists
 ## State Space List
@@ -42,6 +42,7 @@ Organize the specification across exactly 3 Custom Ansible roles. A 4th group mu
 - Handlers
 - Error Handling
 - Templates
+- The stat module
 
 # Strict Coverage & Integration Rules
 1. **Frequency Rules:** Every individual item from BOTH lists above must be mandated at least once, but no more than twice, across the entire specification.

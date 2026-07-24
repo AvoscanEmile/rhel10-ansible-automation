@@ -1,0 +1,9 @@
+---
+- name: Turn on swap
+  ansible.builtin.command:
+    cmd: swapon -a
+  changed_when: true
+- name: Bring enp2s0 connection up
+  ansible.builtin.command:
+    cmd: nmcli con up enp2s0
+  changed_when: true

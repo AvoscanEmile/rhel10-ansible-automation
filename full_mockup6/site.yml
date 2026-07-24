@@ -1,0 +1,22 @@
+---
+- name: Configure base role
+  hosts: base
+  gather_facts: false
+  tasks:
+    - name: Ensure keys presence
+      ansible.posix.authorized_key:
+        key: "{{ lookup('file', 'keys/mockup_key.pub') }}"
+        user: red
+        state: present
+  roles:
+    - base
+- name: Configure storage role
+  hosts: storage
+  gather_facts: false
+  roles:
+    - storage
+- name: Configure web role
+  hosts: web
+  gather_facts: false
+  roles:
+    - web
