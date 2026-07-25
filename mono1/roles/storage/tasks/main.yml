@@ -1,0 +1,92 @@
+---
+- name: Configure VG vg_storage
+  community.general.lvg:
+    vg: vg_storage
+    pvs:
+      - /dev/vdb
+    state: present
+- name: Configure LVs
+  community.general.lvol:
+    lv: "{{ item.lv }}"
+    size: "{{ item.size }}"
+    state: present
+    vg: vg_storage
+  loop:
+    - { lv: lv_backup, size: 2500M }
+    - { lv: lv_swap, size: 1024M }
+- name: Configure fsystems
+  community.general.filesystem:
+    dev: "{{ item.dev }}"
+    fstype: "{{ item.fstype }}"
+    state: present
+  loop:
+    - { dev: /dev/vg_storage/lv_backup, fstype: xfs }
+    - { dev: /dev/vg_storage/lv_swap, fstype: swap }
+- name: Ensure mountpoints presence
+  ansible.builtin.file:
+    state: directory
+    owner: root
+    group: root
+    mode: 'u=rwX,g=rX,o=rX'
+    path: "{{ item }}"
+  loop:
+    - /mnt/xfs_backup
+    - /mnt/nfs_backup
+    - /mnt/nfs_home
+- name: Mount filesystems
+  ansible.posix.mount:
+    path: "{{ item.path }}"
+    fstype: "{{ item.fstype }}"
+    src: "{{ item.src }}"
+    opts: "{{ item.opts }}"
+    state: mounted
+  loop:
+    - { src: /dev/vg_storage/lv_backup, path: /mnt/xfs_backup, fstype: xfs, opts: defaults }
+    - { src: 192.168.122.1:/opt/nfs/backup, path: /mnt/nfs_backup, fstype: nfs4, opts: 'rw,sync' }
+    - { src: 192.168.122.1:/opt/nfs/home, path: /mnt/nfs_home, fstype: nfs4, opts: ro }
+- name: Ensure swap presence in fstab
+  ansible.posix.mount:
+    path: none
+    state: present
+    fstype: swap
+    src: /dev/vg_storage/lv_swap
+  notify: Mount Swap
+- name: Ensure target folder is present and properly configured
+  ansible.builtin.file:
+    path: /srv/local_backup
+    state: directory
+    mode: '0755'
+    owner: red
+    group: red
+- name: Synchronize folders
+  ansible.posix.synchronize:
+    src: files/myfolder
+    dest: /srv/local_backup/
+    delete: true
+  become: false
+- name: Archive folder
+  block:
+    - name: Try archiving local_backup folder
+      community.general.archive:
+        path:
+          - /srv/local_bakcup
+        dest: /srv/backup/data_archive.tar.gz
+        mode: '0644'
+        owner: root
+        group: root
+        format: gz
+  rescue:
+    - name: Fallback to archiving /var/log
+      community.general.archive:
+        path:
+          - /var/log
+        dest: /srv/backup/fallback_log.tar.gz
+        mode: '0644'
+        owner: root
+        group: root
+        format: gz
+  always:
+    - name: Log attempt into file
+      ansible.builtin.shell:
+        cmd: "echo 'Attempted to archive' >> /var/log/archive_execution.log"
+      changed_when: false

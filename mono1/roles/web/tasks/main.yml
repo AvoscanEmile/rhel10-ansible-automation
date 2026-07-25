@@ -1,0 +1,65 @@
+---
+- name: Partition disk
+  community.general.parted:
+    number: 1
+    device: /dev/vdb
+    label: gpt
+    state: present
+    part_start: 1MiB
+    part_end: 2048MiB
+- name: Configure fsystem
+  community.general.filesystem:
+    dev: /dev/vdb1
+    fstype: ext4
+    state: present
+- name: Bind enp2s0 to internal
+  ansible.posix.firewalld:
+    zone: internal
+    permanent: true
+    immediate: true
+    interface: enp2s0
+    state: enabled
+- name: Allow http through internal
+  ansible.posix.firewalld:
+    zone: internal
+    permanent: true
+    immediate: true
+    service: http
+    state: enabled
+- name: Allow port through internal
+  ansible.posix.firewalld:
+    zone: internal
+    permanent: true
+    immediate: true
+    port: 8080/tcp
+    state: enabled
+- name: Ensure target folder exists
+  ansible.builtin.file:
+    state: directory
+    path: /var/www/custom
+    owner: apache
+    group: apache
+    mode: 'u=rwX,g=rX,o=rX'
+- name: Turn seboolean on
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+- name: Tag port properly
+  community.general.seport:
+    ports:
+      - 8080
+    proto: tcp
+    setype: http_port_t
+    state: present
+- name: Configure sefcontext
+  community.general.sefcontext:
+    path: /var/www/custom(/.*)?
+    setype: httpd_sys_content_t
+    state: present
+  notify: Restore file Context
+- name: Create symlink
+  ansible.builtin.file:
+    state: link
+    path: /var/www/html/app_link
+    src: /var/www/custom

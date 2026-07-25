@@ -1,0 +1,5 @@
+---
+- name: Restore file Context
+  ansible.builtin.command:
+    cmd: restorecon -R /var/www/custom
+  changed_when: true

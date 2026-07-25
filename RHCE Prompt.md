@@ -31,8 +31,8 @@ Organize the specification like this: A shared role. And 2 independent roles. It
 * Enforce application layer compliance by tracking precise package states (present, latest, absent).
 * Orchestrate process behavior by ensuring a strict operational state (started/stopped, enabled/disabled) across targeted platform daemons/services.
 * Enforce explicit line properties or multi-line configurations within target text files without altering surrounding ambient configurations.
-* Ensure the presence of compressed archive files generated from targeted local filesystem paths.
-* Ensure structural unpacking of compressed archives into destination directories without triggering redundant extraction cycles.
+* Ensure the presence of compressed archive files generated from targeted local filesystem paths. (Don't assume ficticious folders, ask to archive folders you would expect even a minimal linux install to have)
+* Ensure structural unpacking of compressed archives into destination directories without triggering redundant extraction cycles. (Explicitly reference the archive created in the previous point)
 
 ## Method/Tools List
 - Ansible register and variables

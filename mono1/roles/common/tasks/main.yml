@@ -1,0 +1,62 @@
+---
+- name: Configure network interface
+  community.general.nmcli:
+    conn_name: prod_enp2s0
+    ip4:
+      - "{{ '10.0.10.11/24' if inventory_hostname == 'node2.example.com' else '10.0.10.12/24' }}"
+    state: present
+    ifname: 'enp2s0'
+    gw4: '10.0.10.1'
+    dns4:
+      - '10.0.10.1'
+    type: ethernet
+  when: inventory_hostname in ['node2.example.com', 'node3.example.com']
+- name: Ensure connection is up
+  community.general.nmcli:
+    conn_name: prod_enp2s0
+    state: up
+  when: inventory_hostname in ['node2.example.com', 'node3.example.com']
+- name: Configure hostname resolution
+  ansible.builtin.template:
+    dest: /etc/hosts
+    src: hosts.j2
+    mode: '0644'
+    group: root
+    owner: root
+- name: Configure chronyd
+  ansible.builtin.template:
+    dest: /etc/chrony.conf
+    src: chrony.conf.j2
+    mode: '0644'
+    group: root
+    owner: root
+  notify: Restart chronyd
+- name: Ensure SELinux is enforcing
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+    update_kernel_param: true
+- name: Ensure user sysadmin is present and properly configured
+  ansible.builtin.user:
+    name: sysadmin
+    groups:
+      - wheel
+    append: true
+    password_expire_max: 90
+    password: "{{ 'MyPassword' | password_hash(hashtype='sha512', salt='abcdef') }}"
+- name: Ensure sysadmin has passwordless sudo
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/sysadmins
+    content: |
+      sysadmin ALL=(ALL) NOPASSWD: ALL
+    mode: '0644'
+    group: root
+    owner: root
+- name: Configure cronjob
+  ansible.builtin.cron:
+    name: Health Check
+    user: sysadmin
+    hour: 2
+    minute: 0
+    job: /usr/bin/system-health-check.sh
+    state: present
