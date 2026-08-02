@@ -1,0 +1,111 @@
+---
+- name: Ensure packages are properly installed
+  ansible.builtin.package:
+    state: present
+    name: "{{ item }}"
+  loop:
+    - rsyslog
+    - chrony
+    - curl
+    - rsync
+    - httpd
+- name: Ensure telnet is absent
+  ansible.builtin.package:
+    state: absent
+    name: telnet
+- name: Ensure selinux is on
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+    update_kernel_param: true
+- name: Ensure network is properly configured
+  community.general.nmcli:
+    conn_name: enp2s0
+    ifname: enp2s0
+    state: present
+    ip4: "{{ '172.16.1.10/24' if ansible_facts['nodename'] == 'node2' else '172.16.1.20/24' }}"
+    gw4: 172.16.1.1
+    dns4: 172.16.1.1
+    type: ethernet
+- name: Ensure conn is up
+  community.general.nmcli:
+    conn_name: enp2s0
+    state: up
+- name: Configure host resolution
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    mode: '0644'
+    owner: root
+    group: root
+- name: Create devops group
+  ansible.builtin.group:
+    name: devops
+    state: present
+- name: Ensure user presence
+  ansible.builtin.user:
+    name: sysadmin
+    uid: 1500
+    groups:
+      - wheel
+      - devops
+    append: true
+    password: "{{ 'mypassword' | password_hash('sha512', '12345') }}"
+    password_expire_max: 90
+    password_expire_min: 7
+    password_expire_warn: 14
+    state: present
+- name: Configure sudo for sysadmin
+  ansible.builtin.copy:
+    content: |
+      sysadmin ALL=(ALL) NOPASSWD: ALL
+    dest: /etc/sudoers.d/sysadmin
+    mode: '0440'
+    owner: root
+    group: root
+- name: Configure chronyd
+  ansible.builtin.template:
+    src: chrony.j2
+    dest: /etc/chrony.conf
+    mode: '0644'
+    owner: root
+    group: root
+  notify: Restart chronyd
+- name: Ensure directory presence
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: 'u=rwX,g=rX,o=rX'
+    group: devops
+    owner: sysadmin
+  loop:
+    - /opt/common_tools
+    - /opt/common_tools/bin
+    - /opt/common_tools/scripts
+- name: Ensure absence of directory
+  ansible.builtin.file:
+    path: /opt/common_tools/depecrated
+    state: absent
+- name: Ensure presence of main.sh
+  ansible.builtin.copy:
+    src: files/main.sh
+    dest: /opt/common_tools/scripts/main.sh
+    mode: '0644'
+    owner: red
+    group: red
+- name: Create symlink
+  ansible.builtin.file:
+    src: /opt/common_tools/scripts/main.sh
+    dest: /usr/local/bin/run-common
+    state: link
+- name: Ensure block presence in limits
+  ansible.builtin.blockinfile:
+    block: |
+      * soft nofile 65536
+      * hard nofile 65536
+    state: present
+    dest: /etc/security/limits.d/99-limits.conf
+    create: true
+    mode: '0644'
+    owner: root
+    group: root

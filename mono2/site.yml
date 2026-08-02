@@ -1,0 +1,157 @@
+---
+- name: Perform basic configuration on roles
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Distribute keys
+      ansible.posix.authorized_key:
+        key: "{{ lookup('file', 'keys/mockup_key.pub') }}"
+        user: red
+        state: present
+    - name: Turn off password auth
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/auth.conf
+        mode: '0644'
+        group: root
+        owner: root
+        content: |
+          PasswordAuthentication no
+      notify: Restart sshd
+    - name: Configure repositories
+      ansible.builtin.yum_repository:
+        name: "{{ item.name }}"
+        description: "{{ item.description }}"
+        baseurl: "{{ item.url }}"
+        gpgcheck: false
+        state: present
+      loop:
+        - { name: BaseOS, description: BaseOS, url: http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/ }
+        - { name: AppStream, description: AppStream, url: http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/ }
+    - name: Ensure firewalld is installed
+      ansible.builtin.package:
+        name: firewalld
+        state: present
+    - name: Ensure firewalld is started and enabled
+      ansible.builtin.service:
+        name: firewalld
+        state: started
+        enabled: true
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+- name: Perform common configuration
+  hosts: common
+  gather_facts: true
+  roles:
+    - common
+- name: Configure web role
+  hosts: web
+  gather_facts: false
+  roles:
+    - web
+- name: Configure storage role
+  hosts: storage
+  gather_facts: false
+  roles:
+    - storage
+- name: Configure network role
+  hosts: role-node
+  gather_facts: false
+  vars:
+    network_connections:
+      - name: static-enp2s0
+        autoconnect: true
+        state: up
+        interface_name: enp2s0
+        type: ethernet
+        zone: public
+        ip:
+          address:
+            - 192.168.100.50/24
+          gateway4: 192.168.100.1
+          dns:
+            - 192.168.100.1
+            - 8.8.8.8
+          dns_search:
+            - example.com
+  roles:
+    - linux-system-roles.network
+- name: Configure timesync role
+  hosts: role-node
+  vars:
+    timesync_ntp_servers:
+      - hostname: 10.0.0.254
+        iburst: true
+        prefer: true
+      - hostname: pool.ntp.org
+        iburst: true
+  roles:
+    - linux-system-roles.timesync
+- name: Configure storage with role
+  hosts: role-node
+  vars:
+    storage_pools:
+      - name: vg_data
+        disks:
+          - /dev/vdb
+        volumes:
+          - name: lv_app
+            size: 2G
+            fs_type: xfs
+            mount_point: /mnt/app_data
+            state: present
+          - name: lv_logs
+            size: 1.5G
+            fs_type: ext4
+            mount_point: /mnt/logs
+            state: present
+          - name: lv_swap
+            size: 1G
+            fs_type: swap
+            state: present
+  roles:
+    - linux-system-roles.storage
+- name: Configure SELinux with role
+  hosts: role-node
+  vars:
+    selinux_policy: targeted
+    selinux_state: enforcing
+    selinux_booleans:
+      - name: httpd_can_network_connect
+        state: true
+      - name: ftpd_full_access
+        state: true
+    selinux_ports:
+      - ports: 8888
+        proto: tcp
+        setype: http_port_t
+        state: present
+    selinux_fcontexts:
+      - target: '/mnt/app_data(/.*)?'
+        setype: httpd_sys_rw_content
+    selinux_restore_dirs:
+      - /mnt/app_data
+- name: Configure firewall role
+  hosts: role-node
+  vars:
+    firewall:
+      - zone: public
+        port:
+          - 8888/tcp
+          - 9090/tcp
+        service:
+          - http
+          - https
+          - ssh
+        interface: enp2s0
+        forward_port:
+          - port: 8080
+            proto: tcp
+            toport: 80
+        permanent: true
+        runtime: true
+        state: enabled
+  roles:
+    - linux-system-roles.firewall

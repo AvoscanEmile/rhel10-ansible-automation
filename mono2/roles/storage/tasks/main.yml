@@ -1,0 +1,84 @@
+---
+- name: Configure partitions
+  community.general.parted:
+    state: present
+    label: gpt
+    device: /dev/vdb
+    number: "{{ item.number }}"
+    part_start: "{{ item.start }}"
+    part_end: "{{ item.end }}"
+  loop:
+    - { number: 1, start: 1MiB, end: 2049MiB }
+    - { number: 2, start: 2049MiB, end: 3073MiB }
+- name: Create VG
+  community.general.lvg:
+    pvs:
+      - /dev/vdb1
+    vg: vg_data
+    state: present
+- name: Create LV
+  community.general.lvol:
+    lv: lv_app
+    size: 1.5G
+    state: present
+    vg: vg_data
+- name: Configure fsystems
+  community.general.filesystem:
+    fstype: "{{ item.fstype }}"
+    dev: "{{ item.dev }}"
+    state: present
+  loop:
+    - { fstype: ext4, dev: /dev/vg_data/lv_app }
+    - { fstype: swap, dev: /dev/vdb2 }
+- name: Ensure swap is present at fstab
+  ansible.posix.mount:
+    path: none
+    src: /dev/vdb2
+    fstype: swap
+    state: present
+    opts: defaults
+  notify: Turn swap on
+- name: Ensure directories exists
+  ansible.builtin.file:
+    state: directory
+    mode: '0755'
+    group: root
+    owner: root
+    path: "{{ item }}"
+  loop:
+    - /mnt/app_data
+    - /mnt/nfs_backup
+    - /mnt/nfs_home
+    - /var/backups
+    - /opt/extracted_archive
+- name: Ensure devices are mounted and present in fstab
+  ansible.posix.mount:
+    path: "{{ item.path }}"
+    src: "{{ item.src }}"
+    opts: "{{ item.opts }}"
+    fstype: "{{ item.fstype }}"
+    state: mounted
+  loop:
+    - { path: /mnt/app_data, src: /dev/vg_data/lv_app, opts: defaults, fstype: ext4 }
+    - { path: /mnt/nfs_backup, src: 192.168.122.1:/opt/nfs/backup, opts: 'rw,sync,soft', fstype: nfs4 }
+    - { path: /mnt/nfs_home, src: 192.168.122.1:/opt/nfs/home, opts: 'rw,sync,soft', fstype: nfs4 }
+- name: Archive log folder
+  community.general.archive:
+    path:
+      - /etc/systemd
+    dest: /var/backups/systemd_backup.tar.gz
+    format: gz
+    mode: '0644'
+    owner: root
+    group: root
+- name: Verify marker exists
+  ansible.builtin.stat:
+    path: /opt/extracted_archive/.extracted_marker
+  register: storage_marker
+- name: Unarchive archive into extracted_logs
+  ansible.builtin.unarchive:
+    remote_src: true
+    src: /var/backups/systemd_backup.tar.gz
+    dest: /opt/extracted_archive
+  when: not storage_marker.stat.exists
+  notify: Create marker

@@ -1,0 +1,60 @@
+---
+- name: Ensure httpd is started and enabled
+  ansible.builtin.service:
+    name: httpd
+    state: started
+    enabled: true
+- name: Configure firewall interface
+  ansible.posix.firewalld:
+    state: enabled
+    permanent: true
+    immediate: true
+    zone: public
+    interface: enp2s0
+- name: Configure firewall port
+  ansible.posix.firewalld:
+    state: enabled
+    permanent: true
+    immediate: true
+    zone: public
+    port: 8080/tcp
+- name: Configure firewall service
+  ansible.posix.firewalld:
+    state: enabled
+    permanent: true
+    immediate: true
+    zone: public
+    service: http
+- name: Ensure seboolean is on
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+- name: Configure http seport
+  community.general.seport:
+    setype: http_port_t
+    ports:
+      - 8080
+    proto: tcp
+    state: present
+- name: Ensure directory presence
+  ansible.builtin.file:
+    state: directory
+    group: apache
+    owner: apache
+    mode: '0755'
+    path: /var/www/custom_html
+- name: Configure http sefcontext
+  community.general.sefcontext:
+    setype: httpd_sys_content_t
+    path: /var/www/custom_html(/.*)?
+    state: present
+  notify: Restore http context
+- name: Configure cron job
+  ansible.builtin.cron:
+    user: sysadmin
+    job: /opt/common_tools/scripts/main.sh
+    hour: 2
+    minute: 30
+    state: present
+    name: Main Job

@@ -1,0 +1,5 @@
+---
+- name: Restore http context
+  ansible.builtin.command:
+    cmd: restorecon -R /var/www/custom_html
+  changed_when: true

@@ -31,7 +31,7 @@ Organize the specification like this: A shared role. And 2 independent roles. It
 * Enforce application layer compliance by tracking precise package states (present, latest, absent).
 * Orchestrate process behavior by ensuring a strict operational state (started/stopped, enabled/disabled) across targeted platform daemons/services.
 * Enforce explicit line properties or multi-line configurations within target text files without altering surrounding ambient configurations.
-* Ensure the presence of compressed archive files generated from targeted local filesystem paths. (Don't assume ficticious folders, ask to archive folders you would expect even a minimal linux install to have)
+* Ensure the presence of compressed archive files generated from targeted local filesystem paths. (Don't assume ficticious folders, ask to archive folders you would expect even a minimal linux install to have. If it's not obvious, dont ask to archive /var/log )
 * Ensure structural unpacking of compressed archives into destination directories without triggering redundant extraction cycles. (Explicitly reference the archive created in the previous point)
 
 ## Method/Tools List
@@ -48,6 +48,7 @@ Organize the specification like this: A shared role. And 2 independent roles. It
 1. **Frequency Rules:** Every individual item from BOTH lists above must be mandated at least once, but no more than twice, across the entire specification.
 2. **Inline Integration:** Do NOT create a standalone "Tools" or "Methods" section. Embed every tool requirement directly into the target state descriptions using explicit pairing syntax (e.g., *"Achieve [Specific State from State Space List] using [Specific Ansible Module/Method from Method/Tools List]"*). As you noticed the State Space List is larger. This implies that there will be many target states that will merely look like *"Achieve [Specific State from State Space List]"*. This is perfectly fine. What's not fine is the opposite. Things from the Method/Tools List must never stand on it's own. 
 3. **Exactness:** Do not use vague language like "configure networking." Use explicit requirements like "Enforce firewall port 80/tcp open" and "Archive contents of /var/temp into /root/temp_archive.tar.gz" INSTEAD OF things like "Enforce firewall rules" or "Archive and Unarchive a folder".
+4. **Credibility:** Make sure that you satisfy every other condition before this one, but nonetheless, try to make tasks credible. You don't go an run a full stat check to turn selinux to enforcing, as an example.
 
 # Output Format & Tone
 - **Tone:** Direct, authoritative engineering specification document handed to an engineer for execution.
@@ -63,7 +64,17 @@ The target machines are VMs that have a secondary drive /dev/vdb of 5GiB in size
 # System Roles Mockup
 
 ## Role & Objective
-You are an RHCE Exam Architect. Generate a production-grade deployment specification document for RHCE practice. This document should look like the target state that must be achieve in a single node leveraging the following well-known ansible system roles: Timesync, SELinux, Firewalld, Storage, Network. You should not provide any hints as to how to achieve anything, but you should be programatically specific about the state you want to be reach with each of the roles. Be comprehensive with your coverture, the idea is to practice the throughout usage of these system roles.
+You are an RHCE Exam Architect. Generate a production-grade deployment specification document for RHCE practice. This document should look like the target state that must be achieve in node1.example.com leveraging the following well-known ansible linux-system-roles: Timesync, SELinux, Firewalld, Storage, Network. You should not provide any hints as to how to achieve anything, but you should be programatically specific about the state you want to be reach with each of the roles. Be comprehensive with your coverture, the idea is to practice the throughout usage of these system roles.
 
 ## Important info
 enp2s0 is the interface available for any network related configuration. /dev/vdb (~5G) is the virtual device available for storage configuration.
+
+# Structure for the Monolithic Mockups
+1. Clone the github repo
+2. Generate the specification for node1 based on linux-system-roles
+3. Generate the specification for node2 and node3 based on the General State Space. 
+4. Achieve both specification from a completely empty folder
+5. Verify idempotency by running the playbook twice and compliance with ad-hoc commands (Before and after reboot)
+6. Repeat 4 and 5 with completely fresh nodes
+7. Commit and sync to git repo. 
+8. Delete clone of repo. 

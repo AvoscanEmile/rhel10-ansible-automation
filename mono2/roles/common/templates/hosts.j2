@@ -1,0 +1,5 @@
+172.16.1.10 node2.example.com.2 node2.2
+172.16.1.20 node3.example.com.2 node3.2
+{% for host in groups['all'] %}
+{{ hostvars[host]['ansible_host'] }} {{ host }}
+{% endfor %}

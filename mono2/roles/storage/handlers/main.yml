@@ -1,0 +1,12 @@
+---
+- name: Turn swap on
+  ansible.builtin.command:
+    cmd: swapon -a
+  changed_when: true
+- name: Create marker
+  ansible.builtin.file:
+    state: touch
+    path: /opt/extracted_archive/.extracted_marker
+    mode: '0644'
+    owner: root
+    group: root
