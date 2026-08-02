@@ -1,0 +1,66 @@
+---
+- name: Configure network connection
+  community.general.nmcli:
+    ifname: enp2s0
+    conn_name: enp2s0
+    ip4: "{{ '172.25.250.10/24' if ansible_host == '192.168.122.12' else '172.25.250.11/24' }}"
+    state: present
+    gw4: 172.125.250.254
+    dns4:
+      - 172.125.250.254
+    type: ethernet
+- name: Ensure connection is up
+  community.general.nmcli:
+    conn_name: enp2s0
+    state: up
+- name: Configure template properly
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    owner: root
+    group: root
+    mode: '0644'
+- name: Configure chrony
+  ansible.builtin.template:
+    src: chrony.j2
+    dest: /etc/chrony.conf
+    mode: '0644'
+    group: root
+    owner: root
+  notify: Restart chronyd
+- name: Enable and configure selinux
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+    update_kernel_param: true
+- name: Enusre sysadmin is present
+  ansible.builtin.user:
+    name: sysadmin
+    uid: 2000
+    groups:
+      - wheel
+    append: true
+    password: "{{ 'mypassword' | password_hash('sha512', 'mysalt') }}"
+    password_expire_max: 90
+    password_expire_min: 7
+- name: Ensure wheel has proper permissions
+  ansible.builtin.copy:
+    content: |
+      %wheel ALL=(ALL) NOPASSWD: ALL
+    dest: /etc/sudoers.d/sysadmin
+    owner: root
+    group: root
+    mode: '0440'
+- name: Ensure package installation
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - nfs-utils
+    - httpd
+    - policycoreutils-python-utils
+    - tar
+- name: Ensure package is absent
+  ansible.builtin.package:
+    name: cockpit
+    state: absent

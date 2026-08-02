@@ -1,0 +1,129 @@
+---
+- name: Configure partitions
+  community.general.parted:
+    device: /dev/vdb
+    label: gpt
+    number: "{{ item.number }}"
+    part_start: "{{ item.start }}"
+    part_end: "{{ item.end }}"
+    state: present
+  loop:
+    - { number: 1, start: 1MiB, end: 2049MiB }
+    - { number: 2, start: 2049MiB, end: 100% }
+- name: Create VG
+  community.general.lvg:
+    pvs:
+      - /dev/vdb2
+    vg: vg_data
+    state: present
+- name: Configure LVs
+  community.general.lvol:
+    lv: "{{ item.lv }}"
+    size: "{{ item.size }}"
+    state: present
+    vg: vg_data
+  loop:
+    - { lv: lv_app, size: 1.5G }
+    - { lv: lv_web, size: 1G }
+- name: Configure vdb1 as swap
+  community.general.filesystem:
+    dev: /dev/vdb1
+    fstype: swap
+    state: present
+- name: Gather facts
+  ansible.builtin.setup:
+- name: Ensure vdb1 is present in fstab
+  ansible.posix.mount:
+    src: "UUID={{ ansible_facts['devices']['vdb']['partitions']['vdb1']['uuid'] }}"
+    fstype: swap
+    path: none
+    state: present
+    opts: defaults
+- name: Ensure swap is on
+  ansible.builtin.command:
+    cmd: swapon -a
+  changed_when: false
+- name: Configure storage filesystems
+  community.general.filesystem:
+    fstype: "{{ item.fstype }}"
+    state: present
+    dev: "{{ item.dev }}"
+  loop:
+    - { dev: /dev/vg_data/lv_app, fstype: ext4 }
+    - { dev: /dev/vg_data/lv_web, fstype: xfs }
+- name: Ensure mountpoints are present
+  ansible.builtin.file:
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+    path: "{{ item }}"
+  loop:
+    - /opt/appdata
+    - /srv/webdata
+    - /mnt/remote_backup
+    - /mnt/remote_home
+- name: Mount filesystems
+  ansible.posix.mount:
+    src: "{{ item.src }}"
+    path: "{{ item.path }}"
+    fstype: "{{ item.fstype }}"
+    state: mounted
+  loop:
+    - { src: /dev/vg_data/lv_app, path: /opt/appdata, fstype: ext4 }
+    - { src: /dev/vg_data/lv_web, path: /srv/webdata, fstype: xfs }
+    - { src: 192.168.122.1:/opt/nfs/backup, path: /mnt/remote_backup, fstype: nfs4 }
+    - { src: 192.168.122.1:/opt/nfs/home, path: /mnt/remote_home, fstype: nfs4 }
+- name: Configure sefcontext
+  community.general.sefcontext:
+    ftype: d
+    setype: httpd_sys_content_t
+    path: /srv/webdata(/.*)?
+    state: present
+  notify: Restore webdata context
+- name: Configure seboolean
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+- name: Configure seport
+  community.general.seport:
+    ports:
+      - 8080
+    proto: tcp
+    setype: http_port_t
+    state: present
+    reload: true
+- name: Ensure firewall is installed
+  ansible.builtin.package:
+    name: firewalld
+    state: present
+- name: Ensure firewalld is running
+  ansible.builtin.service:
+    name: firewalld
+    state: started
+    enabled: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    state: enabled
+    service: http
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    state: enabled
+    port: 8080/tcp
+    permanent: true
+    immediate: true
+- name: Ensure listen line is present
+  ansible.builtin.lineinfile:
+    regexp: Listen
+    path: /etc/httpd/conf/httpd.conf
+    line: Listen 8080
+    state: present
+- name: Ensure httpd is started and enabled
+  ansible.builtin.service:
+    name: httpd
+    state: started
+    enabled: true

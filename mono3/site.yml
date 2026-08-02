@@ -1,0 +1,154 @@
+---
+- name: Base Config all Nodes
+  hosts: all
+  tasks:
+    - name: Key Distribution
+      ansible.posix.authorized_key:
+        key: "{{ lookup('file', 'keys/mockup_key.pub') }}"
+        user: red
+        state: present
+    - name: Ensure password auth is off
+      ansible.builtin.copy:
+        content: |
+          PasswordAuthentication No
+        dest: /etc/ssh/sshd_config.d/auth.conf
+        mode: '0644'
+        group: root
+        owner: root
+      notify: Restart sshd
+    - name: Configure repositories
+      ansible.builtin.yum_repository:
+        baseurl: "{{ item.url }}"
+        description: "{{ item.description }}"
+        name: "{{ item.name }}"
+        gpgcheck: false
+        state: present
+      loop:
+        - { description: BaseOS, name: BaseOS, url: http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/ }
+        - { description: AppStream, name: AppStream, url: http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/ }
+    - name: Ensure folders are present
+      ansible.builtin.file:
+        state: directory
+        path: "{{ item }}"
+        mode: '0755'
+        owner: red
+        group: red
+      loop:
+        - /srv/appdata
+        - /srv/applogs
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+- name: Configure common role
+  hosts: common
+  gather_facts: false
+  roles:
+    - common
+- name: Configure storage role
+  hosts: storage
+  gather_facts: false
+  roles:
+    - storage
+- name: Configure ops role
+  hosts: ops
+  gather_facts: false
+  roles:
+    - ops
+- name: Configure timesync on role_node
+  hosts: role_node
+  vars:
+    timesync_ntp_servers:
+      - hostname: 1.rhel.pool.ntp.org
+        iburst: true
+        pool: true
+      - hostname: 0.rhel.pool.ntp.org
+        iburst: true
+        pool: true
+  roles:
+    - linux-system-roles.timesync
+- name: Configure selinux on role_node
+  hosts: role_node
+  vars:
+    selinux_state: enforcing
+    selinux_policy: targeted
+    selinux_booleans:
+      - name: httpd_can_network_connect
+        state: true
+      - name: container_connect_any
+        state: true
+    selinux_fcontexts:
+      - target: /srv/appdata(/.*)?
+        setype: httpd_sys_rw_content_t
+        state: present
+        ftype: d
+    selinux_restore_dirs:
+      - /srv/appdata
+    selinux_ports:
+      - ports: 8443
+        proto: tcp
+        setype: http_port_t
+        state: present
+  roles:
+    - linux-system-roles.selinux
+- name: Configure firewalld in role_node
+  hosts: role_node
+  gather_facts: false
+  vars:
+    firewall:
+      - interface: enp2s0
+        zone: public
+        service:
+          - http
+          - https
+          - ssh
+        port:
+          - 8843/tcp
+        forward_port:
+          port: 8080
+          proto: tcp
+          toport: 80
+        state: enabled
+  roles:
+    - linux-system-roles.firewall
+- name: Configure storage on role_node
+  hosts: role_node
+  gather_facts: false
+  vars:
+    storage_pools:
+      - name: vg_data
+        disks:
+          - /dev/vdb
+        volumes:
+          - name: lv_app
+            size: 2G
+            mount_point: /srv/appdata
+            state: present
+            fs_type: xfs
+          - name: lv_logs
+            size: 1G
+            mount_point: /srv/applogs
+            fs_type: ext4
+  roles:
+    - linux-system-roles.storage
+- name: Configur network on role_node
+  hosts: role_node
+  gather_facts: false
+  vars:
+    network_connections:
+      - name: prod-enp2s0
+        type: ethernet
+        interface_name: enp2s0
+        state: up
+        zone: public
+        ip:
+          address:
+            - 192.168.100.50/24
+          gateway4: 192.168.100.1
+          dns:
+            - 192.168.100.1
+            - 8.8.8.8
+          dhcp4: false
+  roles:
+    - linux-system-roles.network

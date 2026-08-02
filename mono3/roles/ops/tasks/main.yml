@@ -1,0 +1,70 @@
+---
+- name: Ensure proper directory config and existence
+  ansible.builtin.file:
+    state: directory
+    mode: 'u=rwX,g=rX,o=rX'
+    path: "{{ item }}"
+    owner: sysadmin
+    group: sysadmin
+  loop:
+    - /var/ops
+    - /var/ops/scripts
+    - /var/ops/templates
+    - /var/restore/etc/
+- name: Ensure directory is absent
+  ansible.builtin.file:
+    state: absent
+    path: /var/ops/legacy
+- name: Copy skel into templates
+  ansible.builtin.copy:
+    remote_src: true
+    src: /etc/skel/
+    dest: /var/ops/templates/
+    mode: 'u=rwX,g=rX,o=rX'
+    owner: sysadmin
+    group: sysadmin
+- name: Ensure symlink presence
+  ansible.builtin.file:
+    state: link
+    src: /usr/local/bin/ops-runner
+    dest: /var/opts/scripts/main_runner.sh
+    force: true
+- name: Ensure proper directory config
+  ansible.builtin.file:
+    state: directory
+    mode: '0750'
+    owner: sysadmin
+    group: wheel
+    path: /var/log/audit_reports
+- name: Configure cron task
+  ansible.builtin.cron:
+    hour: 2
+    minute: 30
+    job: /usr/local/bin/ops-runner
+    user: sysadmin
+    state: present
+    name: Job sysadmin
+- name: Create archive
+  community.general.archive:
+    path:
+      - /etc
+    exclude_path:
+      - /etc/shadow
+    dest: /root/system_etc_backup.tar.gz
+    format: gz
+    mode: '0644'
+    owner: root
+    group: root
+- name: Verify marker existence
+  ansible.builtin.stat:
+    path: /var/restore/etc/hosts
+  register: ops_etc
+- name: Extract archive
+  ansible.builtin.unarchive:
+    remote_src: true
+    src: /root/system_etc_backup.tar.gz
+    dest: /var/restore/etc/
+    mode: '0755'
+    group: root
+    owner: root
+  when: not ops_etc.stat.exists

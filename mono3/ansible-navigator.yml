@@ -1,0 +1,20 @@
+ansible-navigator:
+  ansible:
+    config:
+      path: ./ansible.cfg
+    playbook:
+      path: site.yml
+  execution-environment:
+    container-engine: auto
+    enabled: True
+    image: localhost/custom-ee
+    pull:
+      policy: missing
+  logging:
+    level: debug
+    append: False
+    file: logs/ansible-navigator.log
+  mode: stdout
+  playbook-artifact:
+    enable: False
+

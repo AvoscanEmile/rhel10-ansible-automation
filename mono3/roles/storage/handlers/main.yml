@@ -1,0 +1,5 @@
+---
+- name: Restore webdata context
+  ansible.builtin.command:
+    cmd: restorecon -R /srv/webdata
+  changed_when: true
