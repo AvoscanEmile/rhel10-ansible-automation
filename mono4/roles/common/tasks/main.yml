@@ -1,0 +1,72 @@
+---
+- name: Configure network
+  community.general.nmcli:
+    ifname: enp2s0
+    conn_name: enp2s0
+    state: present
+    ip4: "{{ '10.0.10.15/24' if ansible_host == '192.168.122.12' else '10.0.10.16/24' }}"
+    gw4: 10.0.10.1
+    dns4:
+      - 10.0.10.1
+    type: ethernet
+- name: Configure hostname resolution
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    group: root
+    owner: root
+    mode: '0644'
+- name: Configure chronyd
+  ansible.builtin.template:
+    src: chrony.j2
+    dest: /etc/chrony.conf
+    group: root
+    owner: root
+    mode: '0644'
+  notify: Restart chronyd
+- name: Ensure package presence
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - chrony
+    - tar
+    - nfs-utils
+- name: Ensure package absence
+  ansible.builtin.package:
+    name: telnet-server
+    state: absent
+- name: Ensure chronyd is active and enabled
+  ansible.builtin.service:
+    name: chronyd
+    state: started
+    enabled: true
+- name: Ensure selinux is enforcing
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+    update_kernel_param: true
+- name: Ensure user sysadmin is present
+  ansible.builtin.user:
+    name: sysadmin
+    groups:
+      - wheel
+    append: true
+    password_expire_max: 90
+    password: "{{ 'mypass' | password_hash('sha512', 'mysalt') }}"
+    state: present
+- name: Ensure sysadming has passwordless sudo
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/sysadmin
+    content: |
+      sysadmin ALL=(ALL) NOPASSWD: ALL
+    mode: '0440'
+    group: root
+    owner: root
+- name: Ensure rootlogin is not allowed in sshd
+  ansible.builtin.lineinfile:
+    regexp: PermitRootLogin
+    line: PermitRootLogin no
+    state: present
+    dest: /etc/ssh/sshd_config
+  notify: Restart sshd

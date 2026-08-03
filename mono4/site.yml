@@ -1,0 +1,159 @@
+---
+- name: Basic config of all nodes
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Distribute public key
+      ansible.posix.authorized_key:
+        key: "{{ lookup('file', 'keys/mockup_key.pub') }}"
+        state: present
+        user: red
+    - name: Disable password auth
+      ansible.builtin.copy:
+        content: |
+          PasswordAuthentication No
+        dest: /etc/ssh/sshd_config.d/auth.conf
+        group: root
+        owner: root
+        mode: '0644'
+      notify: Restart sshd
+    - name: Ensure repository presence
+      ansible.builtin.yum_repository:
+        name: "{{ item.name }}"
+        description: "{{ item.desc }}"
+        baseurl: "{{ item.url }}"
+        state: present
+        gpgcheck: false
+      loop:
+        - { name: BaseOS, desc: BaseOS, url: http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/ }
+        - { name: AppStream, desc: AppStream, url: http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/ }
+    - name: Ensure package presence
+      ansible.builtin.package:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - firewalld
+        - libblockdev-nvme
+        - python3-blivet
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+- name: Configure common nodes
+  hosts: common
+  gather_facts: false
+  roles:
+    - common
+- name: Configure storage nodes
+  hosts: storage
+  gather_facts: false
+  roles:
+    - storage
+- name: Configure security nodes
+  hosts: security
+  gather_facts: false
+  roles:
+    - security
+- name: Configure network on role_node
+  hosts: role_node
+  gather_facts: false
+  vars:
+    network_connections:
+      - name: enp2s0-static
+        type: ethernet
+        interface_name: enp2s0
+        zone: internal
+        ip:
+          dhcp4: false
+          address: 192.168.50.10/24
+          gateway4: 192.168.50.1
+          dns:
+            - 192.168.50.1
+            - 8.8.8.8
+          dns_search:
+            - example.com
+            - infra.example.com
+        autoconnect: true
+  roles:
+    - linux-system-roles.network
+- name: Configure storage on role_node
+  hosts: role_node
+  gather_facts: false
+  vars:
+    storage_pools:
+      - name: vg_prod
+        disks:
+          - /dev/vdb
+        volumes:
+          - name: lv_app
+            size: 2G
+            fs_type: xfs
+            mount_point: "/srv/app"
+            state: present
+          - name: lv_log
+            size: 1G
+            fs_type: ext4
+            mount_point: "/var/log/audit_archive"
+            state: present
+          - name: lv_swap
+            size: 512M
+            fs_type: swap
+            state: present
+  roles:
+    - linux-system-roles.storage
+- name: Configure selinux in role_node
+  hosts: role_node
+  vars:
+    selinux_policy: targeted
+    selinux_state: enforcing
+    selinux_booleans:
+      - name: httpd_can_network_connect
+        state: true
+        persistent: true
+      - name: selinuxuser_ping
+        state: false
+        persistent: true
+    selinux_fcontexts:
+      - target: /srv/app(/.*)?
+        state: present
+        ftype: d
+        setype: httpd_sys_rw_content_t
+    selinux_restore_dirs:
+      - /srv/app
+    selinux_ports:
+      - ports: 8443
+        proto: tcp
+        setype: http_port_t
+        state: present
+  roles:
+    - linux-system-roles.selinux
+- name: Configure firewall in role_node
+  hosts: role_node
+  vars:
+    firewall:
+      - zone: internal
+        interface: enp2s0
+        service:
+          - ssh
+          - https
+        port:
+          - 8443/tcp
+          - 9090/tcp
+        state: enabled
+  roles:
+    - linux-system-roles.firewall
+- name: Configure timesynx in role_node
+  hosts: role_node
+  vars:
+    timesync_ntp_servers:
+      - hostname: 0.rhel.pool.ntp.org
+        pool: true
+        iburst: true
+      - hostname: 1.rhel.pool.ntp.org
+        pool: true
+        iburst: true
+      - hostname: 2.rhel.pool.ntp.org
+        pool: true
+  roles:
+    - linux-system-roles.timesync

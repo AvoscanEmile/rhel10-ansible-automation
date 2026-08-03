@@ -1,0 +1,54 @@
+---
+- name: Ensure webuser exists
+  ansible.builtin.user:
+    name: webuser
+    state: present
+- name: Ensure webgroup exists
+  ansible.builtin.group:
+    name: webgroup
+    state: present
+- name: Ensure directory presence
+  ansible.builtin.file:
+    state: directory
+    path: "{{ item }}"
+    mode: 'u=rwX,g=rX,o=rX'
+    owner: webuser
+    group: webgroup
+  loop:
+    - /srv/app/web_root
+    - /srv/app/assets
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    service: http
+    state: enabled
+    permanent: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    interface: enp2s0
+    state: enabled
+    permanent: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    port: 8080/tcp
+    state: enabled
+    permanent: true
+- name: Enable selinux
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+    update_kernel_param: true
+- name: Turn on sebooleans
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+- name: Configure seport
+  community.general.seport:
+    ports:
+      - 8080
+    proto: tcp
+    setype: http_port_t
+    state: present
