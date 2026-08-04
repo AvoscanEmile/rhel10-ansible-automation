@@ -1,0 +1,108 @@
+---
+- name: Ensure firewalld is installed
+  ansible.builtin.package:
+    name: firewalld
+    state: present
+- name: Ensure firewalld is enabled and running
+  ansible.builtin.service:
+    name: firewalld
+    state: started
+    enabled: true
+- name: Ensure service is running and enabled
+  ansible.builtin.service:
+    name: httpd
+    state: started
+    enabled: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    interface: enp2s0
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    service: http
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    port: 8080/tcp
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure selinux context
+  community.general.sefcontext:
+    setype: httpd_sys_content_t
+    path: /srv/app_data(/.*)?
+    state: present
+    ftype: a
+    reload: true
+- name: Ensure context is properly applied
+  ansible.builtin.command:
+    cmd: restorecon -R /srv/app_data
+  changed_when: false
+- name: Configure seboolean
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+- name: Configure seport
+  community.general.seport:
+    ports:
+      - 8080
+    proto: tcp
+    setype: http_port_t
+    state: present
+    reload: true
+- name: Verify path existence
+  ansible.builtin.stat:
+    path: /etc/hosts
+  register: web_hosts
+- name: Configure symlink
+  ansible.builtin.file:
+    src: /etc/hosts
+    path: /host_link
+    state: link
+  when: web_hosts.stat.exists
+- name: Ensure user auditor exists
+  ansible.builtin.user:
+    name: auditor
+    state: present
+- name: Ensure folder existence
+  ansible.builtin.file:
+    path: /var/log/audit_app
+    state: directory
+    owner: auditor
+    group: auditor
+    mode: '0750'
+- name: Ensure archive existence
+  community.general.archive:
+    path:
+      - /etc/sysconfig
+    dest: /root/sysconfig_backup.tar.gz
+    format: gz
+    owner: root
+    group: root
+    mode: '0755'
+- name: Ensure folder existence
+  ansible.builtin.file:
+    state: directory
+    path: /syconfig_restore
+    mode: '0755'
+- name: Ensure archive extraction
+  ansible.builtin.unarchive:
+    src: /root/sysconfig_backup.tar.gz
+    dest: /syconfig_restore
+    remote_src: true
+- name: Configure cron job
+  ansible.builtin.cron:
+    job: /usr/local/bin/app_cleanup.sh
+    hour: 2
+    minute: 0
+    user: sysadmin
+    state: present
+    name: app cleanup

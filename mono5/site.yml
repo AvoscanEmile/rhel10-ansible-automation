@@ -1,0 +1,147 @@
+---
+- name: Provide basic config to all nodes
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Distribute keys
+      ansible.posix.authorized_key:
+        key: "{{ lookup('file', 'keys/mockup_key.pub') }}"
+        user: red
+        state: present
+    - name: Disable password auth
+      ansible.builtin.copy:
+        content: |
+          PasswordAuthentication no
+        dest: /etc/ssh/sshd_config.d/auth.conf
+        mode: '0440'
+        owner: root
+        group: root
+      notify: Restart sshd
+    - name: Configure repos
+      ansible.builtin.yum_repository:
+        baseurl: "{{ item.url }}"
+        name: "{{ item.name }}"
+        description: "{{ item.desc }}"
+        gpgcheck: false
+        state: present
+      loop:
+        - { url: http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/, name: BaseOS, desc: BaseOS }
+        - { url: http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/, name: AppStream, desc: AppStream }
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+- name: Configure common role
+  hosts: common
+  gather_facts: false
+  roles:
+    - common
+- name: Configure web role
+  hosts: web
+  gather_facts: false
+  roles:
+    - web
+- name: Configure storage role
+  hosts: storage
+  gather_facts: false
+  roles:
+    - storage
+- name: Configure network on role_node
+  hosts: role_node
+  gather_facts: false
+  vars:
+    network_connections:
+      - name: enp2s0-static
+        interface_name: enp2s0
+        type: ethernet
+        state: up
+        zone: internal
+        persistent_state: present
+        ip:
+          dhcp4: false
+          gateway4: 192.168.100.1
+          address:
+            - 192.168.100.50/24
+          dns:
+            - 192.168.100.1
+            - 1.1.1.1
+          dns_search:
+            - example.com
+    timesync_ntp_servers:
+      - hostname: 0.rhel.pool.ntp.org
+        pool: true
+        iburst: true
+      - hostname: 1.rhel.pool.ntp.org
+        pool: true
+        iburst: true
+      - hostname: 2.rhel.pool.ntp.org
+        pool: true
+        iburst: true
+    storage_pools:
+      - name: vg_data
+        type: lvm
+        disks:
+          - /dev/vdb
+        volumes:
+          - name: lv_web
+            size: 2G
+            fs_type: xfs
+            mount_point: /srv/web
+            mount_options: defaults
+          - name: lv_db
+            size: 1.5G
+            fs_type: ext4
+            mount_point: /var/lib/custom_db
+            mount_options: 'defaults,noatime'
+    selinux_policy: targeted
+    selinux_state: enforcing
+    selinux_booleans:
+      - name: httpd_can_network_connect
+        state: true
+        persistent: true
+      - name: httpd_enable_homedirs
+        state: false
+        persistent: true
+      - name: container_connect_any
+        state: true
+        persistent: true
+    selinux_ports:
+      - ports: 8088
+        proto: tcp
+        setype: http_port_t
+        state: present
+    selinux_fcontexts:
+      - target: /srv/web(/.*)?
+        state: present
+        ftype: a
+        setype: httpd_sys_content_t
+      - target: /var/lib/custom_db(/.*)?
+        state: present
+        ftype: a
+        setype: mysqld_db_t
+    selinux_restore_dirs:
+      - /srv/web
+      - /var/lib/custom_db
+    firewall:
+      - service:
+          - http
+          - https
+          - ssh
+          - dns
+        state: enabled
+        zone: internal
+        set_default_zone: internal
+        interface: enp2s0
+        port:
+          - 8088/tcp
+        forward_port:
+          port: 8443
+          proto: tcp
+          toport: 443
+  roles:
+    - linux-system-roles.network
+    - linux-system-roles.timesync
+    - linux-system-roles.storage
+    - linux-system-roles.selinux
+    - linux-system-roles.firewall

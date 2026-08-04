@@ -1,0 +1,66 @@
+---
+- name: Ensure nfs is enabled and running
+  ansible.builtin.service:
+    name: nfs-server
+    state: started
+    enabled: true
+- name: Configure partitions
+  community.general.parted:
+    number: "{{ item.number }}"
+    state: present
+    part_start: "{{ item.start }}"
+    part_end: "{{ item.end }}"
+    label: gpt
+    device: /dev/vdb
+  loop:
+    - { number: 1, start: 0%, end: 2GiB }
+    - { number: 2, start: 2GiB, end: 3GiB }
+- name: Configure VG
+  community.general.lvg:
+    vg: vg_data
+    state: present
+    pvs:
+      - /dev/vdb1
+- name: Configure LV
+  community.general.lvol:
+    lv: lv_app
+    size: 1.5G
+    state: present
+    vg: vg_data
+- name: Configure filesystems
+  community.general.filesystem:
+    dev: "{{ item.dev }}"
+    state: present
+    fstype: "{{ item.fstype }}"
+  loop:
+    - { dev: /dev/vg_data/lv_app, fstype: xfs }
+    - { dev: /dev/vdb2, fstype: swap }
+- name: Ensure swap is present in fstab
+  ansible.posix.mount:
+    src: /dev/vdb2
+    path: none
+    state: present
+    fstype: swap
+- name: Ensure swap is on
+  ansible.builtin.command:
+    cmd: swapon -a
+  changed_when: false
+- name: Ensure mountpoints are present
+  ansible.builtin.file:
+    state: directory
+    path: "{{ item }}"
+    mode: '0755'
+  loop:
+    - /mnt/nfs_backup
+    - /mnt/nfs_home
+    - /mnt/lv_app
+- name: Ensure filesystems are mounted
+  ansible.posix.mount:
+    src: "{{ item.src }}"
+    path: "{{ item.path }}"
+    fstype: "{{ item.fstype }}"
+    state: mounted
+  loop:
+    - { src: /dev/vg_data/lv_app, path: /mnt/lv_app, fstype: xfs }
+    - { src: 192.168.122.1:/opt/nfs/backup, path: /mnt/nfs_backup, fstype: nfs4 }
+    - { src: 192.168.122.1:/opt/nfs/home, path: /mnt/nfs_home, fstype: nfs4 }
