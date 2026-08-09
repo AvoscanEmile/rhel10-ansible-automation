@@ -45,7 +45,7 @@ Organize the specification like this: A shared role. And 2 independent roles. It
 - The stat module
 
 # Strict Coverage & Integration Rules
-1. **Frequency Rules:** Every individual item from BOTH lists above must be mandated at least once, but no more than twice, across the entire specification.
+1. **Frequency Rules:** Every individual item from BOTH lists above must be mandated at least and at max ONCE across the entire specification.
 2. **Inline Integration:** Do NOT create a standalone "Tools" or "Methods" section. Embed every tool requirement directly into the target state descriptions using explicit pairing syntax (e.g., *"Achieve [Specific State from State Space List] using [Specific Ansible Module/Method from Method/Tools List]"*). As you noticed the State Space List is larger. This implies that there will be many target states that will merely look like *"Achieve [Specific State from State Space List]"*. This is perfectly fine. What's not fine is the opposite. Things from the Method/Tools List must never stand on it's own. 
 3. **Exactness:** Do not use vague language like "configure networking." Use explicit requirements like "Enforce firewall port 80/tcp open" and "Archive contents of /var/temp into /root/temp_archive.tar.gz" INSTEAD OF things like "Enforce firewall rules" or "Archive and Unarchive a folder".
 4. **Credibility:** Make sure that you satisfy every other condition before this one, but nonetheless, try to make tasks credible. You don't go an run a full stat check to turn selinux to enforcing, as an example.

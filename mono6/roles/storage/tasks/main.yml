@@ -1,0 +1,108 @@
+---
+- name: Configure partitions
+  community.general.parted:
+    label: gpt
+    number: "{{ item.number }}"
+    device: /dev/vdb
+    part_start: "{{ item.start }}"
+    part_end: "{{ item.end }}"
+    state: present
+  loop:
+    - { number: 1, start: 0%, end: 2GiB }
+    - { number: 2, start: 2GiB, end: 3GiB }
+- name: Ensure partition absence
+  community.general.parted:
+    number: 3
+    device: /dev/vdb
+    state: absent
+- name: Configure vg on vdb1
+  community.general.lvg:
+    vg: vg_data
+    pvs:
+      - /dev/vdb1
+    state: present
+- name: Configure lv on vg_data
+  community.general.lvol:
+    lv: lv_app
+    size: 1.5G
+    state: present
+    vg: vg_data
+- name: Configure filesystems
+  community.general.filesystem:
+    dev: "{{ item.dev }}"
+    fstype: "{{ item.fstype }}"
+    state: present
+  loop:
+    - { dev: /dev/vg_data/lv_app, fstype: xfs }
+    - { dev: /dev/vdb2, fstype: swap }
+- name: Ensure mountpoint exists
+  ansible.builtin.file:
+    state: directory
+    path: "{{ item }}"
+    mode: '0755'
+    owner: root
+    group: root
+  loop:
+    - /opt/restore/sysconfig
+    - /mnt/app
+- name: Ensure filesystems presence on fstab
+  ansible.posix.mount:
+    src: "{{ item.src }}"
+    path: "{{ item.path }}"
+    fstype: "{{ item.fstype }}"
+    state: present
+  loop:
+    - { src: /dev/vg_data/lv_app, path: /mnt/app, fstype: xfs }
+    - { src: /dev/vdb2, path: none, fstype: swap }
+- name: Ensure everything is mounted
+  ansible.builtin.command:
+    cmd: mount -a
+  changed_when: false
+- name: Ensure swap is on
+  ansible.builtin.command:
+    cmd: swapon -a
+  changed_when: false
+- name: Ensure path exists
+  ansible.builtin.stat:
+    path: /etc/sysconfig
+  register: storage_sysconfig
+- name: Archive folder if it exists
+  community.general.archive:
+    dest: /root/sysconfig_backup.tar.gz
+    format: gz
+    path:
+      - /etc/sysconfig
+    mode: '0644'
+    owner: root
+    group: root
+  when: storage_sysconfig.stat.exists
+- name: Restore archive into another directory
+  ansible.builtin.unarchive:
+    remote_src: true
+    src: /root/sysconfig_backup.tar.gz
+    dest: /opt/restore/
+    mode: '0755'
+    owner: root
+    group: root
+- name: Test error handling
+  block:
+    - name: Try copying nonsense
+      ansible.builtin.copy:
+        remote_src: true
+        src: /nonsense/path
+        dest: /more/nonsense/path
+        mode: '0644'
+        owner: root
+        group: root
+  rescue:
+    - name: Ensure sshd is enabled and running
+      ansible.builtin.service:
+        name: sshd
+        state: started
+        enabled: true
+  always:
+    - name: Ensure chronyd is enabled and running
+      ansible.builtin.service:
+        name: chronyd
+        state: started
+        enabled: true

@@ -1,0 +1,162 @@
+---
+- name: Configure all nodes
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Distribute public keys
+      ansible.posix.authorized_key:
+        key: "{{ lookup('file', 'keys/mockup_key.pub') }}"
+        user: red
+        state: present
+    - name: Ensure password auth is off
+      ansible.builtin.copy:
+        content: |
+          PasswordAuthentication No
+        dest: /etc/ssh/sshd_config.d/auth.conf
+        mode: '0644'
+        owner: root
+        group: root
+      notify: Restart sshd
+    - name: Ensure repositories are present
+      ansible.builtin.yum_repository:
+        baseurl: "{{ item.url }}"
+        name: "{{ item.name }}"
+        description: "{{ item.description }}"
+        state: present
+        gpgcheck: false
+      loop:
+        - { url: 'http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/', name: BaseOS, description: BaseOS }
+        - { url: 'http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/', name: AppStream, description: AppStream }
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+- name: Configure common nodes
+  hosts: common
+  roles:
+    - common
+- name: Configure storage nodes
+  hosts: storage
+  roles:
+    - storage
+- name: Configure app nodes
+  hosts: app
+  roles:
+    - app
+# - name: Configure role_node
+#   hosts: role_node
+#   gather_facts: false
+#   pre_tasks:
+#     - name: Ensure timezone is set to UTC
+#       community.general.timezone:
+#         name: UTC
+#   vars:
+#     network_connections:
+#       - name: enp2s0
+#         type: ethernet
+#         interface_name: enp2s0
+#         state: up
+#         zone: internal
+#         ip:
+#           address:
+#             - 192.168.100.50/24
+#           gateway4: 192.168.100.1
+#           dns:
+#             - 192.168.100.1
+#             - 1.1.1.1
+#           dns_search:
+#             - example.com
+#             - infra.example.com
+#           dhcp4: false
+#       - name: enp2s0.100
+#         type: vlan
+#         state: up
+#         autoconnect: true
+#         parent: enp2s0
+#         vlan_id: 100
+#         zone: dmz
+#         ip:
+#           address:
+#             - 10.100.0.50/24
+#           dhcp4: false
+#     storage_pools:
+#       - name: vg_data
+#         disks:
+#           - /dev/vdb
+#         volumes:
+#           - name: lv_app
+#             size: 2G
+#             mount_point: /srv/app
+#             mount_options: 'defaults,noatime'
+#             fs_type: xfs
+#             state: present
+#           - name: lv_secure
+#             size: 1.5G
+#             fs_type: ext4
+#             mount_point: /srv/secure
+#             mount_options: defaults
+#             state: present
+#           - name: lv_swap
+#             size: 512M
+#             fs_type: swap
+#             state: present
+#     selinux_policy: targeted
+#     selinux_state: enforcing
+#     selinux_booleans:
+#       - name: httpd_can_network_connect
+#         state: true
+#         persistent: true
+#       - name: ftpd_full_access
+#         state: true
+#         persistent: true
+#     selinux_fcontexts:
+#       - target: '/srv/app(/.*)?'
+#         state: present
+#         setype: httpd_sys_rw_content_t
+#     selinux_restore_dirs:
+#       - '/srv/app'
+#     selinux_ports:
+#       - ports: 8088
+#         proto: tcp
+#         setype: http_port_t
+#         state: present
+#     firewall:
+#       - zone: internal
+#         service:
+#           - ssh
+#           - cockpit
+#           - dns
+#         state: enabled
+#         interface: enp2s0
+#         port:
+#           - 8088/tcp
+#       - zone: dmz
+#         service:
+#           - http
+#           - https
+#         state: enabled
+#         forward_port:
+#           port: 80
+#           proto: tcp
+#           toport: 8088
+#           toaddr: 192.168.100.50
+#         interface: enp2s0.100
+#     timesync_ntp_servers:
+#       - hostname: 0.rhel.pool.ntp.org
+#         minpoll: 4
+#         maxpoll: 6
+#         iburst: true
+#         pool: true
+#       - hostname: 1.rhel.pool.ntp.org
+#         iburst: true
+#         pool: true
+#       - hostname: 2.rhel.pool.ntp.org
+#         iburst: true
+#         pool: true
+#   roles:
+#     - linux-system-roles.timesync
+#     - linux-system-roles.network
+#     - linux-system-roles.storage
+#     - linux-system-roles.selinux
+#     - linux-system-roles.firewall

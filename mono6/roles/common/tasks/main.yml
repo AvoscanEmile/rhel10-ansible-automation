@@ -1,0 +1,97 @@
+---
+- name: Configure host resolution
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    mode: '0644'
+    owner: root
+    group: root
+- name: Configure chrony
+  ansible.builtin.template:
+    src: chrony.j2
+    dest: /etc/chrony.conf
+    mode: '0644'
+    owner: root
+    group: root
+  notify: Restart chronyd
+- name: Configure second network interface
+  community.general.nmcli:
+    ifname: enp2s0
+    conn_name: enp2s0
+    state: present
+    ip4:
+      - "{{ '10.0.50.10/24' if ansible_host == '192.168.122.12' else '10.0.50.11/24' }}"
+    dns4:
+      - 10.0.50.1
+    gw4: 10.0.50.1
+    method4: manual
+    type: ethernet
+- name: Ensure connection is up
+  community.general.nmcli:
+    conn_name: enp2s0
+    state: up
+- name: Ensure users presence
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups:
+      - wheel
+    append: true
+    password: "{{ 'mypass' | password_hash('sha512', 'mysalt') }}"
+    password_expire_max: 90
+  loop:
+    - devops
+    - secops
+- name: Ensure devops has passwordless sudo
+  ansible.builtin.copy:
+    content: |
+      devops ALL=(ALL) NOPASSWD: ALL
+    dest: /etc/sudoers.d/devops
+    mode: '0440'
+    owner: root
+    group: root
+- name: Ensure package presence
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - curl
+    - httpd
+- name: Ensure package absence
+  ansible.builtin.package:
+    name: telnet
+    state: absent
+- name: Ensure selinux is enforcing
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+    update_kernel_param: true
+- name: Ensure proper file content
+  ansible.builtin.lineinfile:
+    regexp: MaxAuthTries
+    line: 'MaxAuthTries 3'
+    state: present
+    path: /etc/ssh/sshd_config
+- name: Ensure directory presence
+  ansible.builtin.file:
+    state: directory
+    path: /opt/infra/config
+    mode: 'u=rwX,g=rX,o=rX'
+    group: bin
+    owner: root
+- name: Ensure directory absence
+  ansible.builtin.file:
+    state: absent
+    path: /opt/infra/old_config
+- name: Copy default into config
+  ansible.builtin.copy:
+    src: /etc/default/
+    dest: /opt/infra/config/
+    mode: 'u=rwX,g=rX,o=rX'
+    group: bin
+    owner: root
+    remote_src: true
+- name: Test symlink
+  ansible.builtin.file:
+    state: link
+    src: /etc/hosts
+    dest: /host_link

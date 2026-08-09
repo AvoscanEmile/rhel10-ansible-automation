@@ -1,0 +1,88 @@
+---
+- name: Ensure httpd is enabled and started
+  ansible.builtin.service:
+    name: httpd
+    state: started
+    enabled: true
+- name: Configure specific cronjob
+  ansible.builtin.cron:
+    name: sysmon
+    job: /usr/local/bin/sysmon
+    user: devops
+    state: present
+    hour: 2
+    minute: 0
+- name: Ensure firewall is installed
+  ansible.builtin.package:
+    name: firewalld
+    state: present
+- name: Ensure firewall is started and enabled
+  ansible.builtin.service:
+    name: firewalld
+    state: started
+    enabled: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    interface: enp2s0
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    service: http
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    service: cockpit
+    state: disabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    port: 8080/tcp
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Ensure directories exists
+  ansible.builtin.file:
+    state: directory
+    path: "{{ item }}"
+    mode: '0755'
+    owner: root
+    group: root
+  loop:
+    - /var/www/html/app/uploads
+    - /mnt/home
+    - /mnt/backup
+- name: Configure sefcontext
+  community.general.sefcontext:
+    setype: httpd_sys_rw_content_t
+    path: /var/www/html/app/uploads(/.*)?
+    state: present
+- name: Configure seboolean
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+- name: Configure seport
+  community.general.seport:
+    ports:
+      - 8080
+    proto: tcp
+    state: present
+    setype: http_port_t
+- name: Mount nfs shares
+  ansible.posix.mount:
+    src: "{{ item.src }}"
+    path: "{{ item.path }}"
+    fstype: nfs4
+    state: mounted
+  loop:
+    - { src: 192.168.122.1:/opt/nfs/backup, path: /mnt/backup }
+    - { src: 192.168.122.1:/opt/nfs/home, path: /mnt/home }
