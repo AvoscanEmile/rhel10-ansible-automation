@@ -35,7 +35,8 @@ Organize the specification like this: A shared role. And 2 independent roles. It
 * Ensure structural unpacking of compressed archives into destination directories without triggering redundant extraction cycles. (Explicitly reference the archive created in the previous point)
 
 ## Method/Tools List
-- Ansible register and variables
+- Registers
+- Variables
 - Facts
 - Loops
 - Conditional tasks
