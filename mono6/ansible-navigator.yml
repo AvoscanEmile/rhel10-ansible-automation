@@ -1,24 +1,16 @@
 ansible-navigator: 
   ansible:
     config:
-      help: False
       path: ./ansible.cfg
     playbook:
-      help: False
       path: site.yml
   execution-environment:
     container-engine: auto
-    container-options:
-      - "--net=host"
     enabled: True
     image: localhost/custom-ee
     pull:
-      arguments:
-        - "--tls-verify=false"
       policy: missing
   logging:
-    level: debug
-    append: False
     file: logs/ansible-navigator.log
   mode: stdout
   playbook-artifact:
