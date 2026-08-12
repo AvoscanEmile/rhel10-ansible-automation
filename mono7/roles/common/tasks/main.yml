@@ -1,3 +1,118 @@
-#SPDX-License-Identifier: MIT-0
 ---
-# tasks file for roles/common
+- name: Configure connection
+  community.general.nmcli:
+    ip4:
+      - "{{ '10.10.100.11/24' if ansible_host == '192.168.122.12' else '10.0.100.12/24' }}"
+    dns4:
+      - 10.10.100.1
+    gw4: 10.10.100.1
+    autoconnect: true
+    conn_name: enp2s0
+    ifname: enp2s0
+    state: present
+    type: ethernet
+    method4: manual
+- name: Ensure connection is up
+  community.general.nmcli:
+    conn_name: enp2s0
+    state: up
+- name: Configure host resolution
+  ansible.builtin.template:
+    dest: /etc/hosts
+    src: hosts.j2
+    mode: '0644'
+    owner: root
+    group: root
+- name: Ensure package presence
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - httpd
+    - chrony
+- name: Ensure package absence
+  ansible.builtin.package:
+    name: telnet
+    state: absent
+- name: Configure chronyd
+  ansible.builtin.template:
+    src: chrony.j2
+    dest: /etc/chrony.conf
+    mode: '0644'
+    owner: root
+    group: root
+  notify: Restart chronyd
+- name: Ensure group presence
+  ansible.builtin.group:
+    name: devops
+    state: present
+- name: Ensure user presence
+  ansible.builtin.user:
+    name: "{{ item }}"
+    password: "{{ 'mypass' | password_hash('sha512', 'mysalt') }}"
+    groups:
+      - devops
+    append: true
+    password_expire_max: 90
+  loop:
+    - sysadmin
+    - auditor
+    - deployer
+- name: Ensure devops has passwordless sudo
+  ansible.builtin.copy:
+    content: |
+      %devops ALL=(ALL) NOPASSWD: ALL
+    dest: /etc/sudoers.d/devops
+    mode: '0440'
+    owner: root
+    group: root
+- name: Turn off rootlogin in sshd
+  ansible.builtin.lineinfile:
+    regexp: PermitRootLogin
+    line: PermitRootLogin no
+    state: present
+    path: /etc/ssh/sshd_config
+  notify: Restart sshd
+- name: Cap max tries within sshd
+  ansible.builtin.lineinfile:
+    regexp: MaxAuthTries
+    line: MaxAuthTries 3
+    path: /etc/ssh/sshd_config
+    state: present
+  notify: Restart sshd
+- name: Ensure selinux is enforcing
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+    update_kernel_param: true
+- name: Ensure mountpoints exists
+  ansible.builtin.file:
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+    path: "{{ item }}"
+  loop:
+    - /mnt/backup
+    - /mnt/home
+- name: Attempt to Mount NFS shares
+  block:
+    - name: Standard mount attempt
+      ansible.posix.mount:
+        src: "{{ item.src }}"
+        path: "{{ item.path }}"
+        state: mounted
+        fstype: nfs4
+        opts: defaults,timeo=5
+      loop:
+        - { src: 192.168.122.1:/opt/nfs/backup, path: /mnt/backup }
+        - { src: 192.168.122.1:/opt/nfs/home, path: /mnt/home }
+  rescue:
+    - name: Debug output
+      ansible.builtin.debug:
+        msg: "Mount failed, but task succesfully falled back"
+      changed_when: false
+  always:
+    - name: Log general attempt
+      ansible.builtin.debug:
+        msg: "This debug message is just to validate the always block works as intended"

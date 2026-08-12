@@ -1,0 +1,5 @@
+---
+- name: Restore web context
+  ansible.builtin.command:
+    cmd: restorecon -R /srv/web
+  changed_when: false

@@ -1,0 +1,69 @@
+---
+- name: Ensure partition existence
+  community.general.parted:
+    number: 1
+    device: /dev/vdb
+    state: present
+    label: gpt
+    part_start: 0%
+    part_end: 1GiB
+- name: Configure partition as swap
+  community.general.filesystem:
+    fstype: swap
+    dev: /dev/vdb1
+    state: present
+- name: Ensure swap presence in fstab
+  ansible.posix.mount:
+    src: /dev/vdb1
+    path: none
+    state: present
+    fstype: swap
+- name: Ensure swap is on
+  ansible.builtin.command:
+    cmd: swapon -a
+  changed_when: false
+- name: Ensure group existence
+  ansible.builtin.group:
+    name: secgroup
+    state: present
+- name: Ensure user existence
+  ansible.builtin.user:
+    name: auditor
+    state: present
+- name: Configure directory ownership
+  ansible.builtin.file:
+    state: directory
+    path: /var/log/audit_app
+    mode: '0750'
+    group: secgroup
+    owner: auditor
+- name: Configure cron job
+  ansible.builtin.cron:
+    name: cronjob
+    user: deployer
+    job: /usr/local/bin/log_cleanup.sh
+    hour: 2
+    minute: 30
+    state: present
+- name: Ensure directory existence
+  ansible.builtin.file:
+    state: directory
+    path: "{{ item }}"
+    mode: '0755'
+  loop:
+    - /var/backups
+    - /tmp/sysconfig_restore
+- name: Archive sysconfig
+  community.general.archive:
+    path:
+      - /etc/sysconfig
+    format: gz
+    dest: /var/backups/sysconfig_backup.tar.gz
+    mode: '0644'
+    owner: root
+    group: root
+- name: Unaarchive sysconfig
+  ansible.builtin.unarchive:
+    remote_src: true
+    src: /var/backups/sysconfig_backup.tar.gz
+    dest: /tmp/sysconfig_restore

@@ -1,0 +1,117 @@
+---
+- name: Configure partitions
+  community.general.parted:
+    number: 1
+    part_start: 0%
+    part_end: 2.5GiB
+    state: present
+    label: gpt
+    device: /dev/vdb
+- name: Configure vg_app
+  community.general.lvg:
+    vg: vg_app
+    pvs:
+      - /dev/vdb1
+    state: present
+- name: Configure lv_web
+  community.general.lvol:
+    lv: lv_web
+    size: 2G
+    state: present
+    vg: vg_app
+- name: Make lv_web a xfs filesystem
+  community.general.filesystem:
+    fstype: xfs
+    dev: /dev/vg_app/lv_web
+    state: present
+- name: Ensure mountpoint exists
+  ansible.builtin.file:
+    path: /srv/web
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+- name: Mount lv_web
+  ansible.posix.mount:
+    src: /dev/vg_app/lv_web
+    state: mounted
+    path: /srv/web
+    fstype: xfs
+- name: Ensure httpd and firewall are properly installed
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - firewalld
+    - httpd
+- name: Ensure both are enabled and active
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - firewalld
+    - httpd
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    interface: enp2s0
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    service: http
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    port: 8080/tcp
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Ensure group existence
+  ansible.builtin.group:
+    name: webgroup
+    state: present
+- name: Ensure user existence
+  ansible.builtin.user:
+    name: webadmin
+    state: present
+- name: Ensure folder presence
+  ansible.builtin.file:
+    state: directory
+    mode: 'u=rwX,g=rX,o=rX'
+    owner: webadmin
+    group: webgroup
+    path: /srv/web/htdocs
+- name: Ensure folder absence
+  ansible.builtin.file:
+    state: absent
+    path: /srv/web/old_site
+- name: Configure sefcontext for folder
+  community.general.sefcontext:
+    setype: httpd_sys_content_t
+    path: /srv/web(/.*)?
+    state: present
+  notify: Restore web context
+- name: Configure seboolean
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+- name: Configure seport
+  community.general.seport:
+    ports:
+      - 8080
+    proto: tcp
+    state: present
+    setype: http_port_t
+- name: Configure symlink
+  ansible.builtin.file:
+    state: link
+    path: /host_link
+    src: /etc/hosts
