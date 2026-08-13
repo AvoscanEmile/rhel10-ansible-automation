@@ -48,138 +48,138 @@
   gather_facts: false
   roles:
     - storage
-# - name: Configure role_node
-#   hosts: role_node
-#   gather_facts: false
-#   pre_tasks:
-#     - name: Configure time zone
-#       community.general.timezone:
-#         name: UTC
-#     - name: Ensure folders exist
-#       ansible.builtin.file:
-#         state: directory
-#         path: "{{ item }}"
-#         mode: '0644'
-#       loop:
-#         - /srv/web
-#         - /srv/app_logs
-#   vars:
-#     timesync_ntp_servers:
-#       - hostname: 0.rhel.pool.ntp.org
-#         iburst: true
-#         pool: true
-#         minpoll: 4
-#         maxpoll: 10
-#       - hostname: 1.rhel.pool.ntp.org
-#         iburst: true
-#         pool: true
-#         minpoll: 4
-#         maxpoll: 10
-#       - hostname: 192.100.100.254
-#         iburst: true
-#         prefer: true
-#         minpoll: 4
-#         maxpoll: 10
-#     selinux_policy: targeted
-#     selinux_state: enforcing
-#     selinux_booleans:
-#       - name: httpd_can_network_connect
-#         state: true
-#         persistent: true
-#       - name: ftpd_full_access
-#         state: true
-#         persistent: true
-#       - name: container_connect_any
-#         state: true
-#         persistent: true
-#       - name: selinuxuser_ping
-#         state: false
-#         persistent: true
-#     selinux_fcontexts:
-#       - target: /srv/web(/.*)?
-#         setype: httpd_sys_content_t
-#         state: present
-#       - target: /srv/app_logs(/.*)?
-#         setype: var_log_t
-#         state: present
-#     selinux_restore_dirs:
-#       - /srv/web
-#       - /srv/app_logs
-#     selinux_ports:
-#       - ports: 8443
-#         proto: tcp
-#         setype: http_port_t
-#         state: present
-#       - ports: 2222
-#         proto: tcp
-#         setype: ssh_port_t
-#         state: present
-#       - ports: 5140
-#         proto: udp
-#         setype: syslogd_port_t
-#         state: present
-#     firewall:
-#       - zone: internal
-#         interface: enp2s0
-#         service:
-#           - ssh
-#           - http
-#           - https
-#           - dns
-#         port:
-#           - 8443/tcp
-#           - 5140/udp
-#         masquerade: true
-#         forward_port:
-#           - port: 8080
-#             proto: tcp
-#             toport: 80
-#         state: enabled
-#     storage_pools:
-#       - name: vg_data
-#         disks:
-#           - /dev/vdb
-#         volumes:
-#           - name: lv_app
-#             size: 2G
-#             fs_type: xfs
-#             mount_point: /mnt/app_data
-#             mount_options: defaults,noatime
-#             state: present
-#           - name: lv_audit
-#             size: 1.5G
-#             fs_type: ext4
-#             mount_point: /var/log/audit_archive
-#             mount_options: defaults,nodev,nosuid
-#             state: present
-#           - name: lv_swap
-#             size: 1G
-#             fs_type: swap
-#             state: present
-#     network_connections:
-#       - name: enp2s0-static
-#         type: ethernet
-#         zone: internal
-#         mtu: 1500
-#         interface_name: enp2s0
-#         ip:
-#           dhcp4: false
-#           address:
-#             - 192.168.100.50/24
-#           gateway4: 192.168.100.1
-#           dns:
-#             - 192.168.100.1
-#             - 8.8.8.8
-#           dns_search:
-#             - example.com
-#             - infra.example.com
-#           auto6: false
-#         autoconnect: true
-#         state: up
-#         persistent_state: present
-#   roles:
-#     - linux-system-roles.timesync
-#     - linux-system-roles.selinux
-#     - linux-system-roles.firewall
-#     - linux-system-roles.storage
-#     - linux-system-roles.network
+- name: Configure role_node
+  hosts: role_node
+  gather_facts: false
+  pre_tasks:
+    - name: Configure time zone
+      community.general.timezone:
+        name: UTC
+    - name: Ensure folders exist
+      ansible.builtin.file:
+        state: directory
+        path: "{{ item }}"
+        mode: '0644'
+      loop:
+        - /srv/web
+        - /srv/app_logs
+  vars:
+    timesync_ntp_servers:
+      - hostname: 0.rhel.pool.ntp.org
+        iburst: true
+        pool: true
+        minpoll: 4
+        maxpoll: 10
+      - hostname: 1.rhel.pool.ntp.org
+        iburst: true
+        pool: true
+        minpoll: 4
+        maxpoll: 10
+      - hostname: 192.100.100.254
+        iburst: true
+        prefer: true
+        minpoll: 4
+        maxpoll: 10
+    selinux_policy: targeted
+    selinux_state: enforcing
+    selinux_booleans:
+      - name: httpd_can_network_connect
+        state: true
+        persistent: true
+      - name: ftpd_full_access
+        state: true
+        persistent: true
+      - name: container_connect_any
+        state: true
+        persistent: true
+      - name: selinuxuser_ping
+        state: false
+        persistent: true
+    selinux_fcontexts:
+      - target: /srv/web(/.*)?
+        setype: httpd_sys_content_t
+        state: present
+      - target: /srv/app_logs(/.*)?
+        setype: var_log_t
+        state: present
+    selinux_restore_dirs:
+      - /srv/web
+      - /srv/app_logs
+    selinux_ports:
+      - ports: 8443
+        proto: tcp
+        setype: http_port_t
+        state: present
+      - ports: 2222
+        proto: tcp
+        setype: ssh_port_t
+        state: present
+      - ports: 5140
+        proto: udp
+        setype: syslogd_port_t
+        state: present
+    firewall:
+      - zone: internal
+        interface: enp2s0
+        service:
+          - ssh
+          - http
+          - https
+          - dns
+        port:
+          - 8443/tcp
+          - 5140/udp
+        masquerade: true
+        forward_port:
+          - port: 8080
+            proto: tcp
+            toport: 80
+        state: enabled
+    storage_pools:
+      - name: vg_data
+        disks:
+          - /dev/vdb
+        volumes:
+          - name: lv_app
+            size: 2G
+            fs_type: xfs
+            mount_point: /mnt/app_data
+            mount_options: defaults,noatime
+            state: present
+          - name: lv_audit
+            size: 1.5G
+            fs_type: ext4
+            mount_point: /var/log/audit_archive
+            mount_options: defaults,nodev,nosuid
+            state: present
+          - name: lv_swap
+            size: 1G
+            fs_type: swap
+            state: present
+    network_connections:
+      - name: enp2s0-static
+        type: ethernet
+        zone: internal
+        mtu: 1500
+        interface_name: enp2s0
+        ip:
+          dhcp4: false
+          address:
+            - 192.168.100.50/24
+          gateway4: 192.168.100.1
+          dns:
+            - 192.168.100.1
+            - 8.8.8.8
+          dns_search:
+            - example.com
+            - infra.example.com
+          auto6: false
+        autoconnect: true
+        state: up
+        persistent_state: present
+  roles:
+    - linux-system-roles.timesync
+    - linux-system-roles.selinux
+    - linux-system-roles.firewall
+    - linux-system-roles.storage
+    - linux-system-roles.network
