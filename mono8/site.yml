@@ -1,0 +1,142 @@
+---
+- name: Perform basic configuration on all nodes
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Distribute public key
+      ansible.posix.authorized_key:
+        key: "{{ lookup('file', 'keys/mockup_key.pub') }}"
+        user: red
+        state: present
+    - name: Ensure PasswordAuth is off
+      ansible.builtin.copy:
+        content: |
+          PasswordAuthentication No
+        dest: /etc/ssh/sshd_config.d/auth.conf
+        mode: '0644'
+      notify: Restart sshd
+    - name: Configure yum repositories
+      ansible.builtin.yum_repository:
+        baseurl: "{{ item.url }}"
+        description: "{{ item.desc }}"
+        name: "{{ item.name }}"
+        gpgcheck: false
+        exclude:
+          - 'grub*'
+          - 'kernel*'
+          - 'shim*'
+        state: present
+      loop:
+        - { name: BaseOS, desc: BaseOS, url: http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/ }
+        - { name: AppStream, desc: AppStream, url: http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/ }
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+- name: Configure common role
+  hosts: common
+  gather_facts: false
+  roles:
+    - common
+- name: Configure storage role
+  hosts: storage
+  gather_facts: false
+  roles:
+    - storage
+- name: Configure security role
+  hosts: security
+  gather_facts: false
+  roles:
+    - security
+- name: Configure role_node
+  hosts: role_node
+  gather_facts: false
+  vars:
+    network_connections:
+      - name: internal-net
+        interface_name: enp2s0
+        persistent_state: present
+        state: up
+        zone: internal
+        type: ethernet
+        ip:
+          address: 192.100.100.50/24
+          gateway4: 192.100.100.1
+          dhcp4: false
+          dns:
+            - 192.100.100.1
+            - 8.8.8.8
+          dns_search:
+            - example.com
+            - infra.local
+          ipv6_disabled: true
+        autoconnect: true
+    timesync_ntp_servers:
+      - hostname: time.example.com
+        iburst: true
+        prefer: true
+      - hostname: 0.pool.ntp.org
+        iburst: true
+      - hostname: 1.pool.ntp.org
+        iburst: true
+    selinux_policy: targeted
+    selinux_state: enforcing
+    selinux_booleans:
+      - name: httpd_can_network_connect
+        state: true
+        persistent: true
+      - name: container_connect_any
+        state: true
+        persistent: true
+      - name: ftpd_full_access
+        state: false
+        persistent: true
+    selinux_fcontexts:
+      - target: '/srv/app_data(/.*)?'
+        ftype: a
+        setype: httpd_sys_rw_content_t
+        state: present
+    selinux_ports:
+      - ports: 8080
+        proto: tcp
+        setype: http_port_t
+        state: present
+    firewall:
+      - zone: internal
+        set_default_zone: internal
+        interface: enp2s0
+        service:
+          - ssh
+          - http
+          - https
+        port:
+          - 8088/tcp
+          - 9090/tcp
+        state: enabled
+        masquerade: false
+      - zone: drop
+        state: present
+    storage_pools:
+      - name: vg_data
+        disks:
+          - /dev/vdb
+        volumes:
+          - name: lv_app
+            size: 2G
+            fs_type: xfs
+            mount_point: /srv/app_data
+            mount_options: defaults,noatime
+            state: present
+          - name: lv_logs
+            size: 1.5G
+            fs_type: ext4
+            mount_point: /var/log/audit_archive
+            mount_options: defaults
+            state: present
+  roles:
+    - linux-system-roles.network
+    - linux-system-roles.timesync
+    - linux-system-roles.storage
+    - linux-system-roles.selinux
+    - linux-system-roles.firewall

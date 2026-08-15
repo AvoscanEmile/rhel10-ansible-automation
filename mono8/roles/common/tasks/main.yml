@@ -1,0 +1,61 @@
+---
+- name: Ensure package presence
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - chrony
+    - firewalld
+- name: Ensure package absence
+  ansible.builtin.package:
+    name: tmpwatch
+    state: absent
+- name: Ensure firewalld and chronyd are started and enabled
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - firewalld
+    - chronyd
+- name: Ensure chrony is properly configured
+  ansible.builtin.template:
+    dest: /etc/chrony.conf
+    mode: '0644'
+    owner: root
+    group: root
+    src: chrony.j2
+  notify: Restart chronyd
+- name: Ensure host resolution is properly configured
+  ansible.builtin.template:
+    dest: /etc/hosts
+    src: hosts.j2
+    mode: '0644'
+    group: root
+    owner: root
+- name: Configure passwordless sudo for wheel
+  ansible.builtin.copy:
+    content: |
+      %wheel	ALL=(ALL)	NOPASSWD: ALL
+    dest: /etc/sudoers.d/admin_ops
+    mode: '0440'
+    group: root
+    owner: root
+- name: Ensure user sysadmin exists
+  ansible.builtin.user:
+    name: sysadmin
+    state: present
+- name: Configure cron job
+  ansible.builtin.cron:
+    user: sysadmin
+    job: /usr/local/bin/system_health.sh
+    state: present
+    name: health
+    hour: 2
+    minute: 0
+- name: Ensure limits is properly configured
+  ansible.builtin.lineinfile:
+    regexp: sysadmin
+    line: sysadmin hard nofile 4096
+    state: present
+    path: /etc/security/limits.conf

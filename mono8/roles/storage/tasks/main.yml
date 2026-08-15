@@ -1,0 +1,125 @@
+---
+- name: Ensure partition presence
+  community.general.parted:
+    device: /dev/vdb
+    label: gpt
+    number: 1
+    state: present
+    part_start: 1MiB
+    part_end: 2049MiB
+- name: Ensure partition presence
+  community.general.parted:
+    device: /dev/vdb
+    label: gpt
+    number: 2
+    state: present
+    part_start: 2049MiB
+    part_end: 100%
+- name: Create vg
+  community.general.lvg:
+    vg: vg_data
+    state: present
+    pvs:
+      - /dev/vdb1
+- name: Create lv
+  community.general.lvol:
+    lv: lv_app
+    vg: vg_data
+    state: present
+    size: 1.5G
+- name: Create swap lv
+  community.general.lvol:
+    lv: lv_swap
+    vg: vg_data
+    state: present
+    size: 500M
+- name: Configure filesystems
+  community.general.filesystem:
+    fstype: "{{ item.fstype }}"
+    state: present
+    dev: "{{ item.dev }}"
+  loop:
+    - { dev: /dev/vdb2, fstype: xfs }
+    - { dev: /dev/vg_data/lv_swap, fstype: swap }
+    - { dev: /dev/vg_data/lv_app, fstype: ext4 }
+- name: Ensure mountpoints exist
+  ansible.builtin.file:
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+    path: "{{ item }}"
+  loop:
+    - /mnt/app
+    - /mnt/xfs
+- name: Ensure filesystems are mounted
+  ansible.posix.mount:
+    state: mounted
+    src: "{{ item.src }}"
+    path: "{{ item.path }}"
+    fstype: "{{ item.fstype }}"
+  loop:
+    - { src: /dev/vg_data/lv_app, fstype: ext4, path: /mnt/app }
+    - { src: /dev/vdb2, fstype: xfs, path: /mnt/xfs }
+- name: Ensure swap is present in fstab
+  ansible.posix.mount:
+    state: present
+    src: /dev/vg_data/lv_swap
+    path: none
+    fstype: swap
+- name: Ensure swap is on
+  ansible.builtin.command:
+    cmd: swapon -a
+  changed_when: false
+- name: Create user
+  ansible.builtin.user:
+    name: storage_admin
+    groups:
+      - wheel
+    append: true
+    password_expire_min: 7
+    password_expire_max: 90
+    password: "{{ 'mypass' | password_hash('sha512', 'mysalt') }}"
+    state: present
+- name: Ensure directory existence
+  ansible.builtin.file:
+    path: /opt/app_assets
+    state: directory
+    mode: 'u=rwX,g=rX,o=rX'
+    group: sysadmin
+    owner: sysadmin
+- name: Ensure directory absence
+  ansible.builtin.file:
+    path: /opt/old_assets
+    state: absent
+- name: Copy directories
+  ansible.builtin.copy:
+    remote_src: true
+    src: /etc/skel/
+    dest: /opt/app_assets/
+    mode: 'u=rwX,g=rX,o=rX'
+- name: Configure simlink
+  ansible.builtin.file:
+    state: link
+    dest: /host_link
+    src: /etc/hosts
+- name: Ensure path existence
+  ansible.builtin.file:
+    state: directory
+    mode: '0755'
+    path: "{{ item }}"
+  loop:
+    - /opt/etc_restore/
+    - /var/backups
+- name: Ensure archive presence
+  community.general.archive:
+    path:
+      - /etc
+    dest: /var/backups/system_config.tar.gz
+    format: gz
+    mode: '0644'
+- name: Unarchive in proper folder
+  ansible.builtin.unarchive:
+    src: /var/backups/system_config.tar.gz
+    remote_src: true
+    dest: /opt/etc_restore/

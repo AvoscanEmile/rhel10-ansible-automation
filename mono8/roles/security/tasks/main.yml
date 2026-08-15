@@ -1,0 +1,84 @@
+---
+- name: Configure connection
+  community.general.nmcli:
+    conn_name: enp2s0
+    ifname: enp2s0
+    ip4:
+      - 10.0.2.50/24
+    gw4: 10.0.2.1
+    dns4:
+      - 10.0.2.1
+    state: present
+    autoconnect: true
+    type: ethernet
+    zone: public
+- name: Ensure connection is up
+  community.general.nmcli:
+    conn_name: enp2s0
+    state: up
+- name: Ensure directories exists
+  ansible.builtin.file:
+    state: directory
+    path: "{{ item }}"
+    mode: '0755'
+  loop:
+    - /mnt/nfs/home
+    - /mnt/nfs/backup
+    - /var/www/custom_app
+- name: Mount nfs shares
+  ansible.posix.mount:
+    src: "{{ item.src }}"
+    path: "{{ item.path }}"
+    fstype: nfs4
+    state: present
+  loop:
+    - { src: 192.168.122.1:/opt/nfs/backup, path: /mnt/nfs/backup }
+    - { src: 192.168.122.1:/opt/nfs/home, path: /mnt/nfs/home }
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    interface: enp2s0
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    service: http
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    port: 8080/tcp
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Ensure selinux is enforcing
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+    update_kernel_param: true
+- name: Ensure sefcontext is properly configured
+  community.general.sefcontext:
+    path: '/var/www/custom_app(/.*)?'
+    setype: httpd_sys_content_t
+    state: present
+- name: Restore context
+  ansible.builtin.command:
+    cmd: restorecon -R /var/www/custom_app
+  changed_when: false
+  register: security_restore
+- name: Configure seboolean
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+- name: Configure seport
+  community.general.seport:
+    ports:
+      - 8080
+    proto: tcp
+    state: present
+    setype: http_port_t

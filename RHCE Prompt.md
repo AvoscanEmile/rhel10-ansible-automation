@@ -68,7 +68,7 @@ The target machines are VMs that have a secondary drive /dev/vdb of 5GiB in size
 You are an RHCE Exam Architect. Generate a production-grade deployment specification document for RHCE practice. This document should look like the target state that must be achieve in node1.example.com leveraging the following well-known ansible linux-system-roles: Timesync, SELinux, Firewalld, Storage, Network. You should not provide any hints as to how to achieve anything, but you should be programatically specific about the state you want to be reach with each of the roles. Be comprehensive with your coverture, the idea is to practice the throughout usage of these system roles.
 
 ## Important info
-enp2s0 is the interface available for any network related configuration. /dev/vdb (~5G) is the virtual device available for storage configuration.
+enp2s0 is the interface available for any network related configuration. /dev/vdb (~5G) is the virtual device available for storage configuration. Regarding network config, only the 192.168.*.* subnet is not allowed, you can generate wathever outside of it.
 
 # Structure for the Monolithic Mockups
 1. Clone the github repo
