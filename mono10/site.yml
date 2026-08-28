@@ -1,0 +1,38 @@
+---
+- name: Perform basic config on all nodes
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Distribute keys
+      ansible.posix.authorized_key:
+        key: "{{ lookup('file', 'keys/mockup_key.pub') }}"
+        user: red
+        state: present
+    - name: Disable password auth
+      ansible.builtin.copy:
+        content: |
+          PasswordAuthentication No
+        dest: /etc/ssh/sshd_config.d/auth.conf
+        mode: '0644'
+        owner: root
+        group: root
+      notify: Restart sshd
+    - name: Configure repositories
+      ansible.builtin.yum_repository:
+        baseurl: "{{ item.url }}"
+        name: "{{ item.name }}"
+        description: "{{ item.desc }}"
+        gpgcheck: false
+        state: present
+        exclude:
+          - 'kernel*'
+          - 'grub*'
+          - 'shim*'
+      loop:
+        - { name: BaseOS, desc: BaseOS, url: http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/ }
+        - { name: AppStream, desc: AppStream, url: http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/ }
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted

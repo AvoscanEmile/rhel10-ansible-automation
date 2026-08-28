@@ -1,0 +1,148 @@
+---
+- name: Perform basic configuration on all nodes
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Distribute public keys
+      ansible.posix.authorized_key:
+        key: "{{ lookup('file', 'keys/mockup_key.pub') }}"
+        user: red
+        state: present
+    - name: Ensure PasswordAuth is off
+      ansible.builtin.copy:
+        content: |
+          PasswordAuthentication No
+        dest: /etc/ssh/sshd_config.d/auth.conf
+        mode: '0440'
+        owner: root
+        group: root
+      notify: Restart sshd
+    - name: Ensure repositories are plesent
+      ansible.builtin.yum_repository:
+        baseurl: "{{ item.url }}"
+        description: "{{ item.desc }}"
+        name: "{{ item.name }}"
+        gpgcheck: false
+        exclude:
+          - 'kernel*'
+          - 'grub*'
+          - 'shim*'
+      loop:
+        - { name: BaseOS, desc: BaseOS, url: http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/ }
+        - { name: AppStream, desc: AppStream, url: http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/ }
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+# error_handling_demo.yml
+- name: Demonstrate block, rescue, and always error handling
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Attempt operations inside a block
+      block:
+        - name: Task 1 - Harmless operation
+          ansible.builtin.debug:
+            msg: "Starting critical block..."
+
+        - name: Task 2 - Intentionally failing command
+          ansible.builtin.command: /bin/false
+          # This command exits with return code 1, triggering immediate block failure
+
+        - name: Task 3 - Unreachable task
+          ansible.builtin.debug:
+            msg: "You will never see this message because Task 2 failed."
+
+      rescue:
+        - name: Rescue 1 - Handle the failure
+          ansible.builtin.debug:
+            msg: "Caught a task failure inside the block! Executing remediation/fallback..."
+
+        - name: Rescue 2 - Perform recovery action
+          ansible.builtin.copy:
+            content: "Fallback configuration"
+            dest: /tmp/fallback.txt
+            mode: '0644'
+
+      always:
+        - name: Always 1 - Cleanup or final state check
+          ansible.builtin.debug:
+            msg: "This runs unconditionally, regardless of whether block succeeded or rescue triggered."
+
+    - name: Task outside block
+      ansible.builtin.debug:
+        msg: "Play execution continues normally because rescue cleared the failure state."
+# - name: Setup common role
+#   hosts: common
+#   gather_facts: false
+#   roles:
+#     - common
+# - name: Setup storage role
+#   gather_facts: false
+#   hosts: storage
+#   roles:
+#     - storage
+# - name: Setup edge role
+#   hosts: edge
+#   gather_facts: false
+#   roles:
+#     - edge
+# - name: Configure role_node
+#   hosts: role_node
+#   gather_facts: false
+#   vars:
+#     network_connections:
+#       - name: enp2s0
+#         type: ethernet
+#         state: up
+#         zone: internal
+#         ip:
+#           address:
+#             - 10.100.10.50/24
+#           gateway4: 10.100.10.254
+#           dns:
+#             - 10.100.10.2
+#           dns_search:
+#             - example.com
+#           dhcp4: false
+#     storage_pools:
+#       - name: vg_data
+#         disks:
+#           - /dev/vdb
+#         volumes:
+#           - name: lv_app
+#             size: 2G
+#             mount_point: "/mnt/app_data"
+#             mount_options: "defaults,noatime"
+#             fs_type: xfs
+#             state: present
+#     timesync_ntp_servers:
+#       - hostname: 0.pool.ntp.org
+#         iburst: true
+#       - hostname: 1.pool.ntp.org
+#         iburst: true
+#     selinux_state: enforcing
+#     selinux_policy: targeted
+#     selinux_fcontexts:
+#       - target: /mnt/app_data(/.*)?
+#         setype: httpd_sys_content_t
+#         state: present
+#         ftype: a
+#     selinux_restore_dirs:
+#       - /mnt/app_data
+#     firewall:
+#       - zone: internal
+#         set_default_zone: internal
+#         interface: enp2s0
+#         service:
+#           - ssh
+#           - http
+#           - https
+#         state: enabled
+#   roles:
+#     - linux-system-roles.network
+#     - linux-system-roles.storage
+#     - linux-system-roles.timesync
+#     - linux-system-roles.selinux
+#     - linux-system-roles.firewall

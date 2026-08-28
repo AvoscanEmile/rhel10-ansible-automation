@@ -1,0 +1,6 @@
+[role_node]
+node1.example.com ansible_host=192.168.122.11
+[secondary_node]
+node2.example.com ansible_host=192.168.122.12
+[third_node]
+node3.example.com ansible_host=192.168.122.13

@@ -1,0 +1,5 @@
+---
+- name: Restore context
+  ansible.builtin.command:
+    cmd: restorecon -R /srv/gateway_data
+  changed_when: true

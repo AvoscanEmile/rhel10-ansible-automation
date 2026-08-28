@@ -1,0 +1,87 @@
+---
+- name: Configure partitions
+  community.general.parted:
+    number: 1
+    part_start: 1MiB
+    part_end: 2049MiB
+    label: gpt
+    state: present
+    device: /dev/vdb
+- name: Configure partitions
+  community.general.parted:
+    number: 2
+    part_start: 2049MiB
+    part_end: 3073MiB
+    label: gpt
+    state: present
+    device: /dev/vdb
+- name: Configure vg_data
+  community.general.lvg:
+    vg: vg_data
+    pvs:
+      - /dev/vdb1
+    state: present
+- name: Configure lv_appstore
+  community.general.lvol:
+    lv: lv_appstore
+    size: 1500M
+    state: present
+    vg: vg_data
+- name: Configure filesystem
+  community.general.filesystem:
+    fstype: ext4
+    state: present
+    dev: /dev/vg_data/lv_appstore
+- name: Configure swap
+  community.general.filesystem:
+    fstype: swap
+    state: present
+    dev: /dev/vdb2
+- name: Ensure mountpoint exists
+  ansible.builtin.file:
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+    path: /srv/appstore
+- name: Mount filesystem
+  ansible.posix.mount:
+    src: /dev/vg_data/lv_appstore
+    path: /srv/appstore
+    state: mounted
+    fstype: ext4
+- name: Ensure swap is present in fstab
+  ansible.posix.mount:
+    state: present
+    src: /dev/vdb2
+    path: none
+    fstype: swap
+- name: Ensure swap is on
+  ansible.builtin.command:
+    cmd: swapon -a
+  changed_when: false
+- name: Ensure archive is configured
+  community.general.archive:
+    path:
+      - /etc/skel
+    dest: /system_skel.tar.gz
+    mode: '0644'
+    owner: root
+    group: root
+- name: Ensure archive contents are extracted
+  ansible.builtin.unarchive:
+    src: /system_skel.tar.gz
+    dest: /srv/appstore
+    remote_src: true
+- name: Configure directory properly
+  ansible.builtin.file:
+    state: directory
+    mode: 'u=rwX,g=rX,o=rX'
+    dest: /srv/appstore/config
+    owner: sysops
+    group: sysops
+- name: Configure simlink
+  ansible.builtin.file:
+    path: /host_link
+    src: /etc/hosts
+    state: link

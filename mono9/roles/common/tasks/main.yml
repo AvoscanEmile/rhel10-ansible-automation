@@ -1,0 +1,70 @@
+---
+- name: Ensure package installation
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - tmux
+    - rsync
+    - bash-completion
+- name: Ensure package absence
+  ansible.builtin.package:
+    state: absent
+    name: telnet
+- name: Configure host resolution
+  ansible.builtin.template:
+    dest: /etc/hosts
+    mode: '0644'
+    owner: root
+    group: root
+    src: hosts.j2
+- name: Configure chrony
+  ansible.builtin.template:
+    dest: /etc/chrony.conf
+    mode: '0644'
+    owner: root
+    group: root
+    src: chrony.j2
+  notify: Restart chronyd
+- name: Ensure chronyd is started and enabled
+  ansible.builtin.service:
+    name: chronyd
+    state: started
+    enabled: true
+- name: Ensure selinux is enabled
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+    update_kernel_param: true
+- name: Configure sysops user
+  ansible.builtin.user:
+    name: sysops
+    uid: 2200
+    groups:
+      - wheel
+      - adm
+    append: true
+    password: "{{ 'mypass' | password_hash('sha512', 'mysalt') }}"
+    password_expire_max: 90
+    password_expire_min: 7
+- name: Ensure sysops has passwordless sudo
+  ansible.builtin.copy:
+    content: |
+      sysops ALL=(ALL) NOPASSWD: ALL
+    dest: /etc/sudoers.d/99-sysops
+    owner: root
+    group: root
+    mode: '0440'
+- name: Ensure line presence in file
+  ansible.builtin.lineinfile:
+    insertafter: '[Session]'
+    state: present
+    line: umask 027
+    dest: /etc/bashrc
+- name: Configure cronjob
+  ansible.builtin.cron:
+    minute: '*/15'
+    job: '/usr/bin/logger -t CRON_HEALTHCHECK "System Alive"'
+    user: sysops
+    state: present
+    name: sysops_cron

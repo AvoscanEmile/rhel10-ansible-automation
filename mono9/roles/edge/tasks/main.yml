@@ -1,0 +1,100 @@
+---
+- name: Configure network
+  community.general.nmcli:
+    conn_name: enp2s0
+    ifname: enp2s0
+    ip4:
+      - 172.16.50.20/24
+    gw4: 172.16.50.1
+    dns4:
+      - 172.16.50.1
+    state: present
+    autoconnect: true
+    zone: internal
+    type: ethernet
+- name: Ensure network is up
+  community.general.nmcli:
+    conn_name: enp2s0
+    state: up
+- name: Ensure firewall is installed
+  ansible.builtin.package:
+    name: firewalld
+    state: present
+- name: Ensure firewalld is enabled and running
+  ansible.builtin.service:
+    name: firewalld
+    state: started
+    enabled: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: internal
+    interface: enp2s0
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: internal
+    service: https
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: internal
+    port: 8843/tcp
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: internal
+    service: cockpit
+    state: disabled
+    permanent: true
+    immediate: true
+- name: Ensure seboolean is on
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+- name: Configure seport
+  community.general.seport:
+    ports:
+      - 8843
+    proto: tcp
+    setype: http_port_t
+    state: present
+- name: Ensure folder presence
+  ansible.builtin.file:
+    state: directory
+    mode: '0750'
+    owner: sysops
+    group: sysops
+    path: /srv/gateway_data
+- name: Configure fcontext
+  community.general.sefcontext:
+    path: /srv/gateway_data(/.*)?
+    setype: httpd_sys_rw_content_t
+    state: present
+  notify: Restore context
+- name: Ensure mountpoint presence
+  ansible.builtin.file:
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+    path: "{{ item }}"
+  loop:
+    - /mnt/remote_backup
+    - /mnt/remote_home
+- name: Ensure nfs shares are mounted
+  ansible.posix.mount:
+    src: "{{ item.src }}"
+    path: "{{ item.path }}"
+    state: mounted
+    fstype: nfs4
+    opts: "{{ item.opts }}"
+  loop:
+    - { src: 192.168.122.1:/opt/nfs/backup, path: /mnt/remote_backup, opts: 'ro,sync' }
+    - { src: 192.168.122.1:/opt/nfs/home, path: /mnt/remote_home, opts: 'rw,sync' }

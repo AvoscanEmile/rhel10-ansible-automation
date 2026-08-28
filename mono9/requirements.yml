@@ -1,0 +1,22 @@
+# ~/ansible_test/requirements.yml
+---
+roles:
+  # 1. Direct from Ansible Galaxy by author.name
+  - name: geerlingguy.nginx
+
+  # 2. Direct from a live Git repository via SCM
+  - name: custom_firewall
+    src: https://github.com/geerlingguy/ansible-role-firewall.git
+    scm: git
+    version: master
+
+collections:
+  # 1. Standard official collection
+  - name: ansible.posix
+    version: ">=1.5.0"
+
+  # 2. General community collection
+  - name: community.general
+
+  # 3. Podman / container management collection
+  - name: containers.podman

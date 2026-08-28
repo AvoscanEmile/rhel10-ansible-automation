@@ -45,6 +45,11 @@ Organize the specification like this: A shared role. And 2 independent roles. It
 - Templates
 - The stat module
 
+## Extras
+- Download files from webservers to control nodes
+- Download files from webservers to host nodes
+
+
 # Strict Coverage & Integration Rules
 1. **Frequency Rules:** Every individual item from BOTH lists above must be mandated at least and at max ONCE across the entire specification.
 2. **Inline Integration:** Do NOT create a standalone "Tools" or "Methods" section. Embed every tool requirement directly into the target state descriptions using explicit pairing syntax (e.g., *"Achieve [Specific State from State Space List] using [Specific Ansible Module/Method from Method/Tools List]"*). As you noticed the State Space List is larger. This implies that there will be many target states that will merely look like *"Achieve [Specific State from State Space List]"*. This is perfectly fine. What's not fine is the opposite. Things from the Method/Tools List must never stand on it's own. 
@@ -79,3 +84,16 @@ enp2s0 is the interface available for any network related configuration. /dev/vd
 6. Repeat 4 and 5 with completely fresh nodes
 7. Commit and sync to git repo. 
 8. Delete clone of repo. 
+
+# Dedicated Drills
+1. Configure custom role and collection search paths in ansible.cfg while preserving system defaults. After, install roles and collections from various sources via a requirements.yml. Finally, verify the discovery of both installed and default paths.
+
+Scope: Define colon-separated roles_path and collections_path in ansible.cfg to retain system defaults alongside local paths, create a requirements.yml specifying remote URL and tarball sources for roles and collections, install them using ansible-galaxy CLI, and verify visibility with ansible-galaxy role list and ansible-galaxy collection list
+
+2. Traverse, manipulate, and transform data across all primary sources—including simple variables, complex nested variables, system facts, task registers, and cross-node hostvars—to dynamically drive playbook execution flows and generate structured templates.
+
+Scope: Control playbook task execution using loop over nested lists or dictionaries, evaluate multi-criteria when: statements using facts and registered task outputs, and generate configuration files via Jinja2 templates using {% for %} loops, {% if %} conditionals, hostvars cross-node lookups, and basic variable filters.
+
+3. Implement structured error recovery workflows using block, rescue, and always constructs, evaluating task execution states, failed results, discovered system facts, and runtime variables to trigger distinct conditional recovery tasks based on the specific failure cause.
+
+Scope: Structure execution using block, rescue, and always, where individual tasks inside rescue use conditional when: statements to run specific remediation steps based on target facts, variables, or the registered failure outcome of the block, followed by guaranteed execution in always
