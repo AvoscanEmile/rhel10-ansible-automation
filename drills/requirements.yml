@@ -1,0 +1,53 @@
+---
+roles:
+  - src: geerlingguy.nginx
+  - src: geerlingguy.docker
+    version: 7.4.0
+  - src: https://github.com/geerlingguy/ansible-role-mysql.git
+  - src: https://github.com/geerlingguy/ansible-role-postgresql.git
+    version: 3.4.0
+  - name: web_apache
+    src: https://github.com/geerlingguy/ansible-role-apache.git
+  - name: cache_redis
+    src: https://github.com/geerlingguy/ansible-role-redis.git
+    version: 1.8.0
+  - src: https://github.com/geerlingguy/ansible-role-java
+    version: 2.6.1
+  - src: https://github.com/geerlingguy/ansible-role-git.git
+    scm: git
+    version: master
+  - src: https://github.com/geerlingguy/ansible-role-memcached/archive/refs/tags/2.1.0.tar.gz
+    version: 2.1.0
+    name: memcached_service
+  - name: hardening_security
+    src: https://github.com/geerlingguy/ansible-role-security.git
+    scm: git
+    version: 2.1.0
+collections:
+  - name: community.general
+    type: galaxy
+    version: ">=8.0.0,<9.0.0"
+    source: https://galaxy.ansible.com
+  - name: ansible.posix
+    version: 1.5.0
+    type: galaxy
+  - name: amazon.aws
+    version: ">=8.0.0,<9.0.0"
+  - name: https://github.com/ansible-collections/cisco.ios.git
+    type: git
+    version: "main"
+  - name: https://github.com/ansible-collections/kubernetes.core.git
+    version: 5.1.0
+    type: git
+  - name: https://galaxy.ansible.com/download/community-crypto-2.15.0.tar.gz
+    type: url
+  - name: community.crypto
+    type: galaxy
+    version: ">=2.0.0,<3.0.0"
+    source: https://galaxy.ansible.com/
+  - name: https://galaxy.ansible.com/download/community-general-8.5.0.tar.gz
+    type: url
+    version: "8.5.0"
+  - name: https://github.com/ansible-collections/community.general.git
+    type: subdirs
+    version: "main"
