@@ -1,0 +1,8 @@
+managed_users:
+  - name: devops_admin
+    ssh_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGdrillkey1admin devops_admin_key1"
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHdrillkey2backup devops_admin_key2"
+  - name: auditor
+    ssh_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKdrillkey3sec auditor_key1"

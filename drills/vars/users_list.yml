@@ -1,0 +1,23 @@
+# vars/user_list.yml
+group_list:
+  - name: ops
+    gid: 4001
+  - name: dev
+    gid: 4002
+
+user_list:
+  - name: lisa
+    uid: 1001
+    group: ops
+    groups: [wheel, dev]
+    shell: /bin/bash
+  - name: tom
+    uid: 1002
+    group: dev
+    groups: [ops, dev]
+    shell: /bin/bash
+  - name: svc_backup
+    uid: 1003
+    group: ops
+    groups: [wheel, ops]
+    shell: /sbin/nologin

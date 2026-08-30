@@ -1,0 +1,5 @@
+upstream backend_nodes {
+{% for host in groups['webservers'] %}
+    server {{ hostvars[host]['ansible_facts']['default_ipv4']['address'] }}:{{ hostvars[host]['custom_port'] | default(80) }} weight={{ hostvars[host]['weight'] | default(1) }};
+{% endfor %}
+}

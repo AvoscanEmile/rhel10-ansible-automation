@@ -1,0 +1,119 @@
+---
+- name: Drill 1 - Nested user creation
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - vars/users_list.yml
+  tasks:
+    - name: Create groups based on list
+      ansible.builtin.group:
+        name: "{{ item.name }}"
+        gid: "{{ item.gid }}"
+        state: present
+      loop: "{{ group_list }}"
+    - name: Create users based on list
+      ansible.builtin.user:
+        name: "{{ item.name }}"
+        uid: "{{ item.uid }}"
+        group: "{{ item.group }}"
+        groups: "{{ item.groups }}"
+        append: true
+        shell: "{{ item.shell }}"
+      loop: "{{ user_list }}"
+- name: Drill 2 - Test template configuration
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Configure /etc/hosts with a template
+      ansible.builtin.template:
+        dest: /etc/hosts
+        src: templates/hosts.j2
+        mode: '0644'
+    - name: Ensure directory exists
+      ansible.builtin.file:
+        state: directory
+        path: /etc/nginx/conf.d
+        mode: '0755'
+    - name: Configure nginx with a template
+      ansible.builtin.template:
+        dest: /etc/nginx/conf.d/upstream.conf
+        src: templates/upstream.conf.j2
+        mode: '0644'
+- name: Drill 3 - Test conditionals
+  hosts: drill_nodes
+  gather_facts: true
+  tasks:
+    - name: Verify file stats
+      ansible.builtin.stat:
+        path: /etc/custom_repo.lock
+      register: repo_lock
+    - name: Print contents to terminal
+      ansible.builtin.debug:
+        msg: "{{ repo_lock }}"
+    - name: Run update check
+      ansible.builtin.command:
+        cmd: dnf check-update
+      register: update_check
+      changed_when: false
+      failed_when: update_check.rc not in [0, 1, 100]
+    - name: Print register to terminal
+      ansible.builtin.debug:
+        msg: "{{ update_check }}"
+    - name: Install packages only if multiple conditionals are true
+      ansible.builtin.dnf:
+        name: httpd
+        state: present
+      when:
+        - "'Error' not in update_check.stderr"
+        - ansible_facts['distribution'] in ['RedHat', 'CentOS', 'Rocky', 'AlmaLinux', 'Fedora']
+        - ansible_facts['memtotal_mb'] >= 1024
+        - not repo_lock.stat.exists
+    - name: Send a warning based on conditionals
+      ansible.builtin.debug:
+        msg: "Task failed succesfully!"
+      when:
+        - update_check.rc != 100
+        - repo_lock.stat.exists
+- name: Drill 4 - Key distribution using subelements
+  hosts: all
+  vars_files: vars/auth_keys.yml
+  tasks:
+    - name: Ensure users exist
+      ansible.builtin.user:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - devops_admin
+        - auditor
+    - name: Distribute keys
+      ansible.posix.authorized_key:
+        user: "{{ item.0.name }}"
+        key: "{{ item.1 }}"
+        state: present
+      loop: "{{ managed_users | subelements('ssh_keys') }}"
+- name: Drill 5 - Dynamic error messaging
+  hosts: all
+  tasks:
+    - name: Block with automatic failure inspection
+      block:
+        # - name: Download release asset
+        #   ansible.builtin.get_url:
+        #     url: https://example.com/missing-file.tar.gz
+        #     dest: /tmp/asset.tar.gz
+        #     mode: '0644'
+
+        - name: Extract archive
+          ansible.builtin.unarchive:
+            src: /tmp/asset.tar.gz
+            dest: /opt/app/
+            remote_src: true
+
+      rescue:
+        - name: Print contents of the task that failed
+          ansible.builtin.debug:
+            msg: "{{ ansible_failed_task }}"
+        - name: Print error details
+          ansible.builtin.debug:
+            msg: >
+              The task '{{ ansible_failed_task.name }}' failed with error:
+              {{ ansible_failed_result.msg | default(ansible_failed_result.stderr) }}
