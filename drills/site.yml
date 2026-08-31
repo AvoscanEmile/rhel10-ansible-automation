@@ -96,18 +96,16 @@
   tasks:
     - name: Block with automatic failure inspection
       block:
-        # - name: Download release asset
-        #   ansible.builtin.get_url:
-        #     url: https://example.com/missing-file.tar.gz
-        #     dest: /tmp/asset.tar.gz
-        #     mode: '0644'
-
+        - name: Download release asset
+          ansible.builtin.get_url:
+            url: https://example.com/missing-file.tar.gz
+            dest: /tmp/asset.tar.gz
+            mode: '0644'
         - name: Extract archive
           ansible.builtin.unarchive:
             src: /tmp/asset.tar.gz
             dest: /opt/app/
             remote_src: true
-
       rescue:
         - name: Print contents of the task that failed
           ansible.builtin.debug:
