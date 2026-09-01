@@ -33,6 +33,7 @@ Organize the specification like this: A shared role. And 2 independent roles. It
 * Enforce explicit line properties or multi-line configurations within target text files without altering surrounding ambient configurations.
 * Ensure the presence of compressed archive files generated from targeted local filesystem paths. (Don't assume ficticious folders, ask to archive folders you would expect even a minimal linux install to have. If it's not obvious, dont ask to archive /var/log )
 * Ensure structural unpacking of compressed archives into destination directories without triggering redundant extraction cycles. (Explicitly reference the archive created in the previous point)
+* Ensure file download from urls within the control node and the host nodes. One on each at least, real urls.
 
 ## Method/Tools List
 - Registers
@@ -44,11 +45,6 @@ Organize the specification like this: A shared role. And 2 independent roles. It
 - Error Handling
 - Templates
 - The stat module
-
-## Extras
-- Download files from webservers to control nodes
-- Download files from webservers to host nodes
-
 
 # Strict Coverage & Integration Rules
 1. **Frequency Rules:** Every individual item from BOTH lists above must be mandated at least and at max ONCE across the entire specification.

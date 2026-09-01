@@ -1,0 +1,59 @@
+---
+- name: Ensure selinux is enforcing
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+    update_kernel_param: true
+- name: Configure chrony using templates
+  ansible.builtin.template:
+    src: chrony.conf.j2
+    dest: /etc/chrony.conf
+    mode: '0644'
+  notify: Restart chronyd
+- name: Configure host resolution using templates
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    mode: '0644'
+- name: Ensure user presence
+  ansible.builtin.user:
+    name: "{{ item }}"
+    state: present
+    password_expire_max: 90
+    password: "{{ 'redhat' | password_hash('sha512', 'mysalt') }}"
+    groups:
+      - wheel
+    append: true
+  loop:
+    - sysadmin
+    - secops
+    - appdeploy
+- name: Ensure passwordless sudo for wheel
+  ansible.builtin.copy:
+    content: |
+      %wheel ALL=(ALL) NOPASSWD: ALL
+    dest: /etc/sudoers.d/99-wheel-override
+    mode: '0440'
+    owner: root
+    group: root
+- name: Configure packages
+  ansible.builtin.package:
+    name: "{{ item.name }}"
+    state: "{{ item.state }}"
+  loop: "{{ baseline_package_list }}"
+- name: Ensure services are enabled and started
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - sshd
+    - chronyd
+- name: Ensure configuration is properly set at sshd_config
+  ansible.builtin.lineinfile:
+    regexp: "{{ item.regex }}"
+    line: "{{ item.line }}"
+    state: present
+    path: /etc/ssh/sshd_config
+  notify: Restart sshd
+  loop: "{{ baseline_lines }}"

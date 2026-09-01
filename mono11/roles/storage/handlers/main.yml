@@ -1,0 +1,6 @@
+---
+- name: Create marker
+  ansible.builtin.file:
+    state: touch
+    path: /opt/skel_restored/.extracted_flag
+    mode: '0644'

@@ -1,0 +1,135 @@
+---
+- name: Configure first partition
+  community.general.parted:
+    state: present
+    label: gpt
+    part_start: 1MiB
+    part_end: 1025MiB
+    device: /dev/vdb
+    number: 1
+- name: Configure second partition
+  community.general.parted:
+    state: present
+    label: gpt
+    part_start: 1025MiB
+    part_end: 100%
+    device: /dev/vdb
+    number: 2
+- name: Verify partitions
+  ansible.builtin.command:
+    cmd: lsblk /dev/vdb
+  changed_when: false
+  register: storage_partition
+- name: Initialize vg only if vdb2 is present
+  community.general.lvg:
+    vg: vg_app
+    pvs:
+      - /dev/vdb2
+    state: present
+  when: "'vdb2' in storage_partition.stdout"
+- name: Configure lv_data
+  community.general.lvol:
+    state: present
+    vg: vg_app
+    lv: lv_data
+    size: 2.5G
+- name: Configure lv_cache
+  community.general.lvol:
+    state: present
+    vg: vg_app
+    lv: lv_cache
+    size: 1G
+- name: Format filesystems
+  community.general.filesystem:
+    dev: "{{ item.dev }}"
+    fstype: "{{ item.type }}"
+    state: present
+  loop:
+    - { dev: /dev/vg_app/lv_data, type: ext4 }
+    - { dev: /dev/vg_app/lv_cache, type: xfs }
+    - { dev: /dev/vdb1, type: swap }
+- name: Ensure mountpoint presence
+  ansible.builtin.file:
+    state: directory
+    path: "{{ item }}"
+    mode: '2770'
+    owner: sysadmin
+    group: secops
+  loop:
+    - /srv/app_storage
+    - /srv/app_cache
+- name: Mount filesystems
+  ansible.posix.mount:
+    src: "{{ item.src }}"
+    path: "{{ item.path }}"
+    fstype: "{{ item.type }}"
+    opts: "defaults,noatime"
+    state: mounted
+  loop:
+    - { src: /dev/vg_app/lv_data, path: /srv/app_storage, type: ext4 }
+    - { src: /dev/vg_app/lv_cache, path: /srv/app_cache, type: xfs }
+- name: Ensure swap is persistent
+  ansible.posix.mount:
+    src: /dev/vdb1
+    path: none
+    fstype: swap
+    state: present
+- name: Ensure swap is on
+  ansible.builtin.command:
+    cmd: swapon -a
+  changed_when: false
+- name: Ensure directory absence
+  ansible.builtin.file:
+    state: absent
+    path: /opt/app_deploy/deprecated
+- name: Ensure directory presence
+  ansible.builtin.file:
+    state: directory
+    path: /opt/app_deploy/current
+    mode: 'u=rwX,g=rX,o=rX'
+    owner: sysadmin
+    group: sysadmin
+- name: Copy folder contents
+  ansible.builtin.copy:
+    src: /usr/share/doc/
+    dest: /opt/app_deploy/current/
+    remote_src: true
+    mode: 'u=rwX,g=rX,o=rX'
+    owner: sysadmin
+    group: sysadmin
+- name: Configure symlink
+  ansible.builtin.file:
+    src: /etc/hosts
+    path: /hosts_link
+    state: link
+- name: Configure seftcontext
+  community.general.sefcontext:
+    setype: httpd_sys_content_t
+    path: '/opt/app_deploy(/.*)?'
+    state: present
+- name: Restore context
+  ansible.builtin.command:
+    cmd: restorecon -Rv /opt/app_deploy
+  changed_when: false
+- name: Archive /etc/skel
+  community.general.archive:
+    path: /etc/skel
+    dest: /var/tmp/system_skel_backup.tar.gz
+    format: gz
+    mode: '0644'
+- name: Ensure folder existence
+  ansible.builtin.file:
+    state: directory
+    path: /opt/skel_restored
+    mode: '0755'
+- name: Verify marker existence
+  ansible.builtin.stat:
+    path: /opt/skel_restored/.extracted_flag
+  register: storage_marker
+- name: Extract contents directly into target without nested skel/
+  ansible.builtin.unarchive:
+    src: /var/tmp/system_skel_backup.tar.gz
+    dest: /opt/skel_restored/
+    remote_src: true
+  notify: Create marker
+  when: not storage_marker.stat.exists

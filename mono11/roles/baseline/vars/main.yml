@@ -1,0 +1,15 @@
+---
+baseline_package_list:
+  - state: present
+    name: tmux
+  - state: latest
+    name: sos
+  - state: absent
+    name: telnet-server
+baseline_lines:
+  - regex: PermitRootLogin
+    line: PermitRootLogin prohibit-password
+  - regex: ClientAliveInterval
+    line: ClientAliveInterval 300
+  - regex: ClientAliveCountMax
+    line: ClientAliveCountMax 2

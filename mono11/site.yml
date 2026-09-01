@@ -1,0 +1,157 @@
+---
+- name: Perform basic provisioning
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Distribute keys
+      ansible.posix.authorized_key:
+        key: "{{ lookup('file', 'keys/mockup_key.pub') }}"
+        user: red
+        state: present
+    - name: Disable password auth
+      ansible.builtin.copy:
+        content: |
+          PasswordAuthentication no
+        dest: /etc/ssh/sshd_config.d/auth.conf
+        mode: '0644'
+        owner: root
+        group: root
+      notify: Restart sshd
+    - name: Distribute repositories
+      ansible.builtin.yum_repository:
+        name: "{{ item.name }}"
+        description: "{{ item.desc }}"
+        baseurl: "{{ item.url }}"
+        gpgcheck: false
+        enabled: true
+        state: present
+        exclude:
+          - kernel*
+          - shim*
+          - grub*
+      loop:
+        - { name: BaseOS, desc: BaseOS, url: http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/ }
+        - { name: AppStream, desc: AppStream, url: http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/ }
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+# - name: Congifure roles_node
+#   hosts: roles_node
+#   gather_facts: false
+#   vars:
+#     timesync_ntp_servers:
+#       - hostname: 0.rhel.pool.ntp.org
+#         iburst: true
+#         prefer: true
+#       - hostname: 1.rhel.pool.ntp.org
+#         iburst: true
+#       - hostname: time.google.com
+#         iburst: true
+#         minpoll: 4
+#         maxpoll: 6
+#     timesync_step_threshold: 1.0
+#     network_connections:
+#       - name: prod-data
+#         interface_name: enp2s0
+#         zone: internal
+#         type: ethernet
+#         state: up
+#         mtu: 1500
+#         ip:
+#           dhcp4: false
+#           address: 10.20.30.50/24
+#           gateway4: 10.20.30.1
+#           dns:
+#             - 10.20.30.2
+#             - 1.1.1.1
+#           dns_search:
+#             - example.com
+#           route:
+#             - network: 10.50.0.0
+#               prefix: 16
+#               gateway: 10.20.30.254
+#               metric: 100
+#     storage_pools:
+#       - name: vg_data
+#         type: lvm
+#         disks:
+#           - /dev/vdb
+#         volumes:
+#           - name: lv_app
+#             size: 2G
+#             fs_type: xfs
+#             mount_point: /data/app
+#             mount_options: defaults,noexec
+#             state: present
+#           - name: lv_secure
+#             size: 1.5G
+#             fs_type: ext4
+#             mount_point: /data/secure
+#     selinux_policy: targeted
+#     selinux_state: enforcing
+#     selinux_booleans:
+#       - name: httpd_can_network_connect
+#         state: true
+#         persistent: true
+#       - name: ftpd_anon_write
+#         state: false
+#     selinux_fcontexts:
+#       - target: '/data/app(/.*)?'
+#         setype: httpd_sys_content_t
+#         state: present
+#       - target: '/data/secure(/.*)?'
+#         setype: gpg_secret_t
+#         state: present
+#     selinux_restore_dirs:
+#       - /data/secure
+#       - /data/app
+#     selinux_ports:
+#       - ports: 8443
+#         proto: tcp
+#         setype: http_port_t
+#         state: present
+#       - ports: 9090
+#         proto: tcp
+#         setype: websm_port_t
+#         state: present
+#     firewall:
+#       - service:
+#           - ssh
+#           - cockpit
+#         zone: public
+#         state: enabled
+#       - interface: enp2s0
+#         zone: internal
+#         state: enabled
+#         service:
+#           - http
+#           - https
+#           - dns
+#         port:
+#           - 8443/tcp
+#           - 9090/tcp
+#         forward_port:
+#           - port: 8080
+#             proto: tcp
+#             toport: 8443
+#   roles:
+#     - linux-system-roles.timesync
+#     - linux-system-roles.network
+#     - linux-system-roles.storage
+#     - linux-system-roles.selinux
+#     - linux-system-roles.firewall
+- name: Configure common nodes
+  hosts: baseline
+  gather_facts: true
+  roles:
+    - baseline
+- name: Configure storage nodes
+  hosts: storage
+  roles:
+    - storage
+- name: Configure network nodes
+  hosts: network
+  roles:
+    - network

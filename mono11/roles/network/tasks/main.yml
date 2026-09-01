@@ -1,0 +1,108 @@
+---
+- name: Configure network
+  community.general.nmcli:
+    conn_name: static-enp2s0
+    ifname: enp2s0
+    ip4:
+      - 10.10.40.50/24
+    gw4: 10.10.40.1
+    dns4:
+      - 10.10.40.2
+    state: present
+    autoconnect: true
+    type: ethernet
+    zone: internal
+  when: "'enp2s0' in ansible_facts['interfaces']"
+- name: Ensure firewall is installed
+  ansible.builtin.package:
+    name: firewalld
+    state: present
+- name: Ensure firewall is started and enabled
+  ansible.builtin.service:
+    name: firewalld
+    state: started
+    enabled: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: internal
+    interface: enp2s0
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: internal
+    service: "{{ item }}"
+    state: enabled
+    permanent: true
+    immediate: true
+  loop:
+    - http
+    - https
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: internal
+    port: 8443/tcp
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    service: cockpit
+    state: disabled
+- name: Configure seport
+  community.general.seport:
+    ports:
+      - 8088
+    proto: tcp
+    setype: http_port_t
+    state: present
+- name: Configure seboolean
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+- name: Configure seboolean
+  ansible.posix.seboolean:
+    name: ftpd_anon_write
+    state: false
+- name: Ensure mountpoints exist
+  ansible.builtin.file:
+    state: directory
+    name: "{{ item }}"
+    mode: '0755'
+  loop:
+    - /mnt/remote_backup
+    - /mnt/remote_home
+- name: Mount nfs shares
+  ansible.posix.mount:
+    src: "{{ item.src }}"
+    path: "{{ item.path }}"
+    opts: "rw,sync,_netdev"
+    fstype: nfs4
+    state: mounted
+  loop:
+    - { src: "192.168.122.1:/opt/nfs/backup", path: /mnt/remote_backup }
+    - { src: "192.168.122.1:/opt/nfs/home", path: /mnt/remote_home }
+- name: Configure crontab
+  ansible.builtin.cron:
+    weekday: 1-5
+    hour: 3
+    minute: 30
+    user: secops
+    job: /usr/bin/find /tmp -type f -mtime +7 -delete
+    name: cronjob
+- name: Download file from url
+  block:
+    - name: Attempt first url
+      ansible.builtin.get_url:
+        url: https://cdn.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.1
+        dest: /tmp/kernel_changelog.txt
+        mode: '0644'
+  rescue:
+    - name: Attempt second url
+      ansible.builtin.get_url:
+        url: https://mirrors.edge.kernel.org/pub/linux/kernel/v6.x/ChangeLog-6.1.1
+        dest: /tmp/kernel_changelog.txt
+        mode: '0644'
