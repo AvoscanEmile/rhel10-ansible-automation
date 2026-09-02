@@ -1,0 +1,25 @@
+---
+- name: Data Structures drill
+  hosts: all
+  tasks:
+    - name: Print information about variables
+      ansible.builtin.debug:
+        msg: "Service {{ item.1.name }} in tier {{ item.0.tier }} listens on port {{ item.0.port }} (state: {{ item.1.state }})"
+      loop: "{{ workloads | subelements('services') }}"
+    - name: Verify available space
+      ansible.builtin.shell:
+        cmd: "df --output=pcent / | tail -n 1 | tr -dc '0-9'"
+      register: root_disk_usage
+      changed_when: false
+    - name: Print variable
+      ansible.builtin.debug:
+        msg: "Candidate node qualified"
+      when:
+        - ansible_facts['memtotal_mb']  >= 100
+        - root_disk_usage.stdout | int < 90
+        - ansible_facts['default_ipv4']['address'] != '192.168.122.11'
+    - name: Ensure template presence
+      ansible.builtin.template:
+        src: report.j2
+        dest: /report.txt
+        mode: '0644'

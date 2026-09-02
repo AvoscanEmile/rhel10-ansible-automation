@@ -1,0 +1,15 @@
+workloads:
+  web:
+    port: 8080
+    tier: frontend
+    services:
+      - name: nginx
+        state: started
+      - name: certbot
+        state: stopped
+  db:
+    port: 5432
+    tier: backend
+    services:
+      - name: postgresql
+        state: started

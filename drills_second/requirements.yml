@@ -1,0 +1,42 @@
+roles:
+  - src: geerlingguy.nginx
+  - src: geerlingguy.docker
+    version: 6.1.0
+  - src: https://github.com/geerlingguy/ansible-role-haproxy.git
+    version: master
+    name: custom_haproxy
+  - src: https://github.com/geerlingguy/ansible-role-postgresql.git
+    version: 3.4.0
+    name: custom_postgres
+  # - src: ssh://git@github.com/geerlingguy/ansible-role-apache.git
+  #   version: v3.2.0
+  # - src: /tmp/artifacts/custom_firewall_role.tar.gz
+  # - src: https://internal.repo.local/tarballs/custom_audit_role-1.0.0.tar.gz
+  #   version: 1.0.0
+  #   name: audit_baseline
+  - src: https://github.com/geerlingguy/ansible-role-security/archive/refs/tags/2.0.0.tar.gz
+    name: security
+  # - src: git+ssh://git@gitlab.internal.lan/infra/hardening.git
+  #   version: prod-branch
+  #   name: system_hardening
+  # - src: /home/student/downloads/offline-role.tar.gz
+  #   name: offline_role
+collections:
+  - name: ansible.posix
+  - name: community.general
+    version: '>=8.0.0,<9.0.0'
+  # - name: redhat.rhel_system_roles
+  #   version: 1.22.0
+  # - name: /tmp/collections/cisco-ios-5.2.0.tar.gz
+  - name: https://galaxy.ansible.com/download/containers-podman-1.15.2.tar.gz
+  - name: https://github.com/ansible-collections/ansible.netcommon.git
+    version: main
+    type: git
+  # - name: https://internal.repo.local/pkgs/custom-automation-1.0.0.tar.gz
+  # - name: git@github.com:ansible-collections/amazon.aws.git
+  #   version: v7.1.0
+  #   type: git
+  # - name: /opt/vendor/packages/arista-eos-6.0.0.tar.gz
+  # - name: https://gitlab.internal.lan/platform/security_collection.git
+  #   version: release-2026.1
+  #   type: git

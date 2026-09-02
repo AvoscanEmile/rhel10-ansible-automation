@@ -1,0 +1,32 @@
+{% for host in groups['drill_nodes'] %}
+---
+host={{ host }} 
+hostname={{ hostvars[host]['ansible_facts']['hostname'] }}
+os_family={{ hostvars[host]['ansible_facts']['os_family'] }}
+release={{ hostvars[host]['ansible_facts']['distribution_version'] }}
+kernel_version={{ hostvars[host]['ansible_facts']['kernel'] }}
+system_architecture={{ hostvars[host]['ansible_facts']['architecture'] }}
+default_interface={{ hostvars[host]['ansible_facts']['default_ipv4']['interface'] }}
+default_ipv4_address={{ hostvars[host]['ansible_facts']['default_ipv4']['address'] }}
+mac_address={{ hostvars[host]['ansible_facts']['default_ipv4']['macaddress'] }}
+total_mtu={{ hostvars[host]['ansible_facts']['default_ipv4']['mtu'] }}
+usable_memory={{ (hostvars[host]['ansible_facts']['memfree_mb'] / 1024) | round(2) }} GiB
+usable_cores={{ hostvars[host]['ansible_facts']['processor_cores'] }}
+available_space={{ hostvars[host]['root_disk_usage']['stdout'] }}
+timezone={{ hostvars[host]['ansible_facts']['date_time']['tz'] }}
+timestring={{ hostvars[host]['ansible_facts']['date_time']['time'] }}
+{% for mount in hostvars[host]['ansible_facts']['mounts'] %}
+availabe_{{ host }}_{{ mount['device'] }}_gib={{ (mount['size_available'] / (1024 * 1024 * 1024)) | round(2) }}
+{% endfor %}
+interface_list={{ hostvars[host]['ansible_facts']['interfaces'] | sort | join(', ') }}
+{% for nameserver in hostvars[host]['ansible_facts']['dns']['nameservers'] %}
+    {{ nameserver }}
+{% endfor %}
+{% for workload in hostvars[host]['workloads'].values() %}
+{% for service in workload['services'] %}
+{% if service['state'] == 'started' %}
+{{ service['name'] | upper }}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% endfor %}
