@@ -1,5 +1,5 @@
 ---
-- name: Data Structures drill
+- name: Data Structures and templates Drill
   hosts: all
   tasks:
     - name: Print information about variables
@@ -23,3 +23,40 @@
         src: report.j2
         dest: /report.txt
         mode: '0644'
+- name: Complex Error Handling Drill
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Complex execution block
+      block:
+        - name: Create lock file
+          ansible.builtin.file:
+            state: touch
+            path: /tmp/deploy.lock
+            mode: '0440'
+        - name: Port conflict failure
+          ansible.builtin.shell:
+            cmd: "echo 'ERROR: Address already in use'; exit 98"
+          when: simulate_failure == 'port_conflict'
+        - name: Package missing failure
+          ansible.builtin.shell:
+            cmd: "echo 'Package httpd not found'; exit 1"
+          when: simulate_failure == 'missing_package'
+        - name: Succesful task
+          ansible.builtin.debug:
+            msg: "This task was succesful"
+          when: simulate_failure == 'none'
+      rescue:
+        - name: Configure alternate port
+          ansible.builtin.debug:
+            msg: "Configured alternate port 8080"
+          when: ansible_failed_result.rc == 98
+        - name: Resolve dependency
+          ansible.builtin.debug:
+            msg: "Configure another dependency for the package"
+          when: ansible_failed_result.stdout == 'Package httpd not found'
+      always:
+        - name: Make sure lock is absent
+          ansible.builtin.file:
+            path: /tmp/deploy.lock
+            state: absent
