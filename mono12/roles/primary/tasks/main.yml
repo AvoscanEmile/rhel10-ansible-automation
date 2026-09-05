@@ -1,0 +1,90 @@
+---
+- name: Create directories
+  ansible.builtin.file:
+    state: directory
+    path: "{{ item }}"
+    mode: '0755'
+  loop:
+    - /opt/extracted_pki
+    - /var/backups
+    - /mnt/data
+- name: Create pki archive
+  community.general.archive:
+    path:
+      - /etc/pki
+    dest: /var/backups/pki_snapshot.tar.gz
+    format: gz
+    mode: '0644'
+- name: Verify existence of a extract marker
+  ansible.builtin.stat:
+    path: /opt/extracted_pki/.extract_marker
+  register: primary_marker
+- name: Unarchive pki if marker does not exists
+  ansible.builtin.unarchive:
+    src: /var/backups/pki_snapshot.tar.gz
+    remote_src: true
+    dest: /opt/extracted_pki
+  notify: Create marker
+  when: not primary_marker.stat.exists
+- name: Ensure directory presence
+  ansible.builtin.file:
+    state: directory
+    mode: '0755'
+    path: /srv/shared
+- name: Ensure directory absence
+  ansible.builtin.file:
+    state: absent
+    path: /srv/legacy_data
+- name: Copy docs into created directory
+  ansible.builtin.copy:
+    src: /usr/share/doc/
+    dest: /srv/shared/
+    remote_src: true
+    mode: 'u=rwX,g=rX,o=rX'
+    owner: root
+    group: root
+- name: Configure simlinks
+  ansible.builtin.file:
+    state: link
+    dest: /srv/current_doc
+    src: /srv/shared
+- name: Configure VG
+  community.general.lvg:
+    vg: vg_storage
+    pvs:
+      - /dev/vdb
+    state: present
+- name: Configure LVs
+  community.general.lvol:
+    lv: "{{ item.lv }}"
+    vg: vg_storage
+    size: "{{ item.size }}"
+    state: present
+  loop:
+    - { lv: lv_data, size: 2G }
+    - { lv: lv_swap, size: 1G }
+- name: Assign filesystems
+  community.general.filesystem:
+    dev: "{{ item.dev }}"
+    fstype: "{{ item.fs }}"
+    state: present
+  loop:
+    - { dev: /dev/vg_storage/lv_data, fs: xfs }
+    - { dev: /dev/vg_storage/lv_swap, fs: swap }
+- name: Mount xfs filesystem
+  ansible.posix.mount:
+    src: /dev/vg_storage/lv_data
+    fstype: xfs
+    path: /mnt/data
+    state: mounted
+- name: Ensure swap is present in fstab
+  ansible.posix.mount:
+    src: /dev/vg_storage/lv_swap
+    fstype: swap
+    path: none
+    state: present
+    opts: sw
+- name: Ensure swap is on
+  ansible.builtin.command:
+    cmd: swapon -a
+  changed_when: false

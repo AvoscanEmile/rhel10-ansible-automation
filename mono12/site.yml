@@ -1,0 +1,128 @@
+---
+- name: Ensure basic configuration across all nodes
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Configure key distribution
+      ansible.posix.authorized_key:
+        key: "{{ lookup('file', 'keys/mockup_key.pub') }}"
+        user: red
+        state: present
+    - name: Turn off password auth
+      ansible.builtin.copy:
+        content: |
+          PasswordAuthentication no
+        dest: /etc/ssh/sshd_config.d/auth.conf
+        mode: '0644'
+      notify: Restart sshd
+    - name: Configure repositories
+      ansible.builtin.yum_repository:
+        name: "{{ item.name }}"
+        description: "{{ item.desc }}"
+        baseurl: "{{ item.url }}"
+        state: present
+        gpgcheck: false
+        enabled: true
+      loop:
+        - { name: BaseOS, desc: BaseOS, url: http://mirror.stream.centos.org/10-stream/BaseOS/$basearch/os/ }
+        - { name: AppStream, desc: AppStream, url: http://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/ }
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+# - name: Configure roles_node
+#   hosts: roles_node
+#   gather_facts: false
+#   pre_tasks:
+#     - name: Change timezone
+#       community.general.timezone:
+#         name: UTC
+#   vars:
+#     timesync_ntp_servers:
+#       - hostname: 0.pool.ntp.org
+#         iburts: true
+#       - hostname: 1.pool.ntp.org
+#         iburst: true
+#     timesync_max_distance: 3
+#     firewall:
+#       - set_default_zone: internal
+#         state: enabled
+#       - zone: internal
+#         service:
+#           - ssh
+#           - http
+#           - https
+#         port:
+#           - 8080/tcp
+#           - 8443/tcp
+#           - 9090/tcp
+#         forward_port:
+#           - port: 80
+#             proto: tcp
+#             toport: 8080
+#           - port: 443
+#             proto: tcp
+#             toport: 8443
+#         state: enabled
+#     storage_pools:
+#       - name: vg_app
+#         disks:
+#           - /dev/vdb
+#         volumes:
+#           - name: lv_web
+#             size: 2G
+#             fs_type: xfs
+#             state: present
+#             mount_point: /srv/web
+#             mount_options: defaults,noatime
+#           - name: lv_data
+#             size: 1.5G
+#             fs_type: ext4
+#             state: present
+#             mount_point: /srv/data
+#             mount_options: defaults,nosuid
+#           - name: lv_swap
+#             fs_type: swap
+#             state: present
+#             size: 512M
+#     network_connections:
+#       - name: static-enp2s0
+#         type: ethernet
+#         interface_name: enp2s0
+#         state: up
+#         autoconnect: true
+#         mtu: 1500
+#         ip:
+#           dhcp4: false
+#           address:
+#             - 10.0.10.50/24
+#             - 10.0.10.51/24
+#           gateway4: 10.0.10.1
+#           dns:
+#             - 10.0.10.1
+#             - 1.1.1.1
+#           dns_search:
+#             - example.com
+#             - infra.example.com
+#   roles:
+#     - linux-system-roles.timesync
+#     - linux-system-roles.network
+#     - linux-system-roles.firewall
+#     - linux-system-roles.storage
+#     - linux-system-roles.selinux
+- name: Common nodes configuration
+  hosts: common
+  gather_facts: true
+  roles:
+    - common
+- name: Primary nodes configuration
+  hosts: primary_node
+  gather_facts: false
+  roles:
+    - primary
+- name: Secondary nodes configuration
+  hosts: secondary_node
+  gather_facts: false
+  roles:
+    - secondary

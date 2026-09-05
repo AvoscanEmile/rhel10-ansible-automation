@@ -1,0 +1,16 @@
+ansible-navigator:
+  ansible:
+    config:
+      path: ansible.cfg
+    playbook:
+      path: site.yml
+  execution-environment:
+    enabled: True
+    image: localhost/custom-ee
+    pull:
+      policy: missing
+  logging:
+    file: logs/ansible-navigator.log
+  mode: stdout
+  playbook-artifact:
+    enable: false

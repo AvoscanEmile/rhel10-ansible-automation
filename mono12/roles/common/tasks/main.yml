@@ -1,0 +1,70 @@
+---
+- name: Ensure selinux is enforcing
+  ansible.posix.selinux:
+    state: enforcing
+    policy: targeted
+    update_kernel_param: true
+- name: Configure ip on first node
+  community.general.nmcli:
+    conn_name: enp2s0
+    ifname: enp2s0
+    ip4:
+      - 10.100.55.11/24
+    gw4: 10.100.55.11
+    dns4:
+      - 10.100.55.11
+    state: present
+    autoconnect: true
+    type: ethernet
+  when: ansible_facts['default_ipv4']['address'] == '192.168.122.12'
+- name: Configure ip on second node
+  community.general.nmcli:
+    conn_name: enp2s0
+    ifname: enp2s0
+    ip4:
+      - 10.100.55.12/24
+    gw4: 10.100.55.12
+    dns4:
+      - 10.100.55.12
+    state: present
+    autoconnect: true
+    type: ethernet
+  when: ansible_facts['default_ipv4']['address'] == '192.168.122.13'
+- name: Configure host resolution
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    mode: '0644'
+- name: Configure chrony
+  ansible.builtin.template:
+    src: chrony.j2
+    dest: /etc/chrony.conf
+    mode: '0644'
+  notify: Restart chronyd
+- name: Configure sudoers
+  ansible.builtin.copy:
+    content: |
+      %wheel ALL=(ALL) NOPASSWD: ALL
+    mode: '0644'
+    dest: /etc/sudoers.d/wheel
+    validate: visudo -cf %s
+- name: Ensure package presence
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - firewalld
+    - nfs-utils
+- name: Ensure package is latest
+  ansible.builtin.package:
+    name: cockpit
+    state: latest
+- name: Ensure package is absent
+  ansible.builtin.package:
+    name: telnet
+    state: absent
+- name: Download a file
+  ansible.builtin.get_url:
+    url: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9
+    dest: /etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-9
+    mode: '0644'

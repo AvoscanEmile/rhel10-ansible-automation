@@ -6,10 +6,9 @@ Organize the specification like this: A shared role. And 2 independent roles. It
 
 # Target Lists
 ## State Space List
-* Enforce the presence or absence of GPT disk partitions with precise boundary and sizing parameters.
 * Manage the presence, allocation, and sizing of LVM components utilizing declarative volume state parameters.
 * Ensure active allocation and persistent boot-time registration of system swap space.
-* Ensure the presence of valid, uncorrupted Ext4 or XFS structures across target storage partitions.
+* Ensure the presence of valid, uncorrupted Ext4 or XFS structures across target storage.
 * Enforce directory structure lifecycle and asset replication by explicitly managing target path states (creating required destination trees and removing legacy paths) before replicating local or remote directory assets with explicit trailing-slash copy mechanics.
 * Enforce recursive, type-segregated file modes (0755 for directories, 0644 for files) and explicit owner/group assignments across infrastructure paths.
 * Ensure symbolic link alignment by mapping pointer targets directly to specified physical sources of truth.

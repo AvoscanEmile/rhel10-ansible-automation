@@ -1,0 +1,135 @@
+---
+- name: Enable and start firewalld
+  block:
+    - name: Regular attempt
+      ansible.builtin.service:
+        name: firewalld
+        state: started
+        enabled: true
+    - name: Verify the state of firewalld
+      ansible.builtin.command:
+        cmd: systemctl status firewalld
+      register: secondary_fw_status
+      changed_when: false
+  rescue:
+    - name: Remove lock files
+      ansible.builtin.file:
+        state: absent
+        path: /var/run/firewalld.pid
+    - name: Re-attempt initialization
+      ansible.builtin.service:
+        name: firewalld
+        state: started
+        enabled: true
+    - name: Verify the state of firewalld
+      ansible.builtin.command:
+        cmd: systemctl status firewalld
+      register: secondary_fw_status
+      changed_when: false
+  always:
+    - name: Print firewalld status
+      ansible.builtin.debug:
+        msg: "The current status of firewalld is: {{ secondary_fw_status.stdout | default('No status reported. Something happened') }}"
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    service: http
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    port: 8080/tcp
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    service: cockpit
+    state: disabled
+    permanent: true
+    immediate: true
+- name: Configure firewall
+  ansible.posix.firewalld:
+    zone: public
+    interface: enp2s0
+    state: enabled
+    permanent: true
+    immediate: true
+- name: Ensure directory presence
+  ansible.builtin.file:
+    state: directory
+    path: "{{ item }}"
+    mode: '0755'
+  loop:
+    - /mnt/remote_backup
+    - /mnt/remote_home
+- name: Ensure NFS shares are properly mounted
+  ansible.posix.mount:
+    src: '192.168.122.1:/opt/nfs/backup'
+    path: /mnt/remote_backup
+    state: mounted
+    fstype: nfs4
+    opts: ro,nosuid
+- name: Ensure NFS shares are properly mounted
+  ansible.posix.mount:
+    src: '192.168.122.1:/opt/nfs/home'
+    path: /mnt/remote_home
+    state: mounted
+    fstype: nfs4
+    opts: rw,sync
+- name: Create user deployer
+  ansible.builtin.user:
+    name: deployer
+    uid: "{{ secondary_app_user_gid }}"
+    groups:
+      - wheel
+    append: true
+    password: "{{ 'mypass' | password_hash('sha512', 'mysalt') }}"
+    password_expire_max: 90
+    password_expire_min: 7
+- name: Ensure directory presence
+  ansible.builtin.file:
+    state: directory
+    path: /var/www/custom_app
+    mode: '0750'
+    owner: deployer
+    group: deployer
+- name: Configure sefcontext
+  community.general.sefcontext:
+    setype: httpd_sys_content_t
+    path: "/var/www/custom_app(/.*)?"
+    state: present
+- name: Restore directory context
+  ansible.builtin.command:
+    cmd: restorecon -R /var/www/custom_app
+  changed_when: false
+- name: Configure seboolean
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+- name: Configure seport
+  community.general.seport:
+    ports:
+      - 8080
+    proto: tcp
+    setype: http_port_t
+    state: present
+- name: Ensure line presence
+  ansible.builtin.lineinfile:
+    regexp: deployer soft nofile
+    line: deployer soft nofile 4096
+    path: /etc/security/limits.conf
+    state: present
+- name: Configure cronjob
+  ansible.builtin.cron:
+    job: '/usr/bin/find /var/tmp -type f -mtime +7 -delete'
+    weekday: mon
+    hour: 3
+    minute: 0
+    user: deployer
+    state: present
+    name: cronjob_ansible

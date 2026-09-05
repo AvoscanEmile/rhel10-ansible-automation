@@ -1,0 +1,6 @@
+---
+- name: Create marker
+  ansible.builtin.file:
+    state: touch
+    path: /opt/extracted_pki/.extract_marker
+    mode: '0444'
