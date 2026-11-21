@@ -2,3 +2,10 @@ keys/
 collections/
 .vault_pass
 .vault-pass
+logs/
+*.log
+*-artifact-*.json
+*.retry
+*.key
+*.pem
+collections/ansible_collections/
