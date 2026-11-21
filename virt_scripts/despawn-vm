@@ -1,0 +1,30 @@
+#!/bin/bash
+# /usr/local/sbin/despawn-vm
+
+if [ $# -eq 0 ]; then
+    echo "Usage: despawn-vm <name1> <name2> ... <nameN>"
+    exit 1
+fi
+
+for VM_NAME in "$@"; do
+    echo "--- Decommissioning $VM_NAME ---"
+
+    # Check if VM exists
+    if ! virsh dominfo "$VM_NAME" >/dev/null 2>&1; then
+        echo "Warning: VM $VM_NAME not found. Skipping."
+        continue
+    fi
+
+    # Force shutdown if running
+    if [ "$(virsh domstate "$VM_NAME")" == "running" ]; then
+        echo "Stopping $VM_NAME..."
+        virsh destroy "$VM_NAME" >/dev/null
+    fi
+
+    # Wipe metadata, NVRAM (UEFI state), and storage volumes
+    echo "Removing $VM_NAME (definition, nvram, and storage)..."
+    virsh undefine "$VM_NAME" --nvram --remove-all-storage >/dev/null
+    virsh net-update default delete ip-dhcp-host "<host name='$VM_NAME'/>" --live --config 2>/dev/null
+
+    echo "Instance $VM_NAME purged."
+done

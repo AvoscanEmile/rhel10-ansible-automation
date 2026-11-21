@@ -1,0 +1,71 @@
+#!/bin/bash
+# /usr/local/sbin/spawn-vm - Deterministic Edition
+
+SOURCE="/var/lib/libvirt/images/rhel.qcow2"
+STORAGE_DIR="/var/lib/libvirt/images"
+IP_PREFIX="192.168.122"
+START_IP=11
+
+# 1. Parse Arguments & Flags
+VM_NAMES=()
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -s|--start) START_IP="$2"; shift ;;
+        *) VM_NAMES+=("$1") ;;
+    esac
+    shift
+done
+
+if [ ${#VM_NAMES[@]} -eq 0 ]; then
+    echo "Usage: spawn-vm [-s <start_suffix>] <name1> <name2>..."
+    exit 1
+fi
+
+CURRENT_IP=$START_IP
+
+for VM_NAME in "${VM_NAMES[@]}"; do
+    DEST="${STORAGE_DIR}/${VM_NAME}.qcow2"
+    DATA_DISK="${STORAGE_DIR}/${VM_NAME}-storage.qcow2"
+    
+    # Deterministic networking logic
+    TARGET_IP="${IP_PREFIX}.${CURRENT_IP}"
+    # Generate a unique MAC using the IP suffix (hex-formatted)
+    HEX_SUFFIX=$(printf "%02x" $CURRENT_IP)
+    MAC="52:54:00:12:34:$HEX_SUFFIX"
+
+    echo "--- Provisioning $VM_NAME ($TARGET_IP) ---"
+    
+    if virsh dominfo "$VM_NAME" >/dev/null 2>&1; then
+        echo "Warning: VM $VM_NAME already exists. Skipping."
+        continue
+    fi
+
+    # 2. Pre-register DHCP Reservation in libvirt
+    # We delete any old entry for this name/MAC first to avoid "already exists" errors
+    virsh net-update default delete ip-dhcp-host "<host name='$VM_NAME'/>" --live --config 2>/dev/null
+    virsh net-update default add ip-dhcp-host \
+      "<host mac='$MAC' name='$VM_NAME' ip='$TARGET_IP'/>" --live --config
+
+    # 3. Clone and Create Storage
+    cp --reflink=always "$SOURCE" "$DEST"
+    qemu-img create -f qcow2 "$DATA_DISK" 5G
+
+    # 4. Launch with assigned MAC
+    virt-install \
+      --name "$VM_NAME" \
+      --vcpus 1 \
+      --memory 1024 \
+      --os-variant rhel10.0 \
+      --disk path="$DEST",format=qcow2,cache=unsafe \
+      --disk path="$DATA_DISK",format=qcow2,cache=unsafe \
+      --import \
+      --network network=default,model=virtio,mac="$MAC" \
+      --network network=sandbox,model=virtio \
+      --graphics none \
+      --boot uefi \
+      --noautoconsole \
+      --tpm none
+
+    echo "Instance $VM_NAME launched at $TARGET_IP"
+    ((CURRENT_IP++))
+done
