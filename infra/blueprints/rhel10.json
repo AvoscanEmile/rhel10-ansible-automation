@@ -1,0 +1,30 @@
+{
+  "content_sources": [],
+  "customizations": {
+    "locale": {
+      "languages": [
+        "C.UTF-8"
+      ]
+    },
+    "timezone": {
+      "timezone": "Etc/UTC"
+    },
+    "users": [
+      {
+        "groups": [
+          "wheel"
+        ],
+        "hasPassword": true,
+        "name": "red"
+      }
+    ]
+  },
+  "description": "",
+  "distribution": "rhel-10",
+  "metadata": {
+    "exported_at": "2026-11-21 00:58:41.332322853 +0000 UTC",
+    "is_on_prem": false,
+    "parent_id": "0c1c3fdc-eb38-4e79-8dd2-b520d5ccdaae"
+  },
+  "name": "rhel10"
+}
