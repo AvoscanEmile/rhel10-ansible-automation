@@ -91,4 +91,4 @@ Scope: Control playbook task execution using loop over nested lists or dictionar
 
 3. Implement structured error recovery workflows using block, rescue, and always constructs, evaluating task execution states, failed results, discovered system facts, and runtime variables to trigger distinct conditional recovery tasks based on the specific failure cause.
 
-Scope: Structure execution using block, rescue, and always, where individual tasks inside rescue use conditional when: statements to run specific remediation steps based on target facts, variables, or the registered failure outcome of the block, followed by guaranteed execution in always
+Scope: Structure execution using block, rescue, and always, where individual tasks inside rescue use conditional when: statements to run specific remediation steps based on target facts, variables, or the registered failure outcome of the block, followed by guaranteed execution in always.
