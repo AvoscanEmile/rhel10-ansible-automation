@@ -728,9 +728,9 @@
         gid: 1050
         state: present
         name: analytics
-    - name: Ensure presence of anal user
+    - name: Ensure presence of analytics_user
       ansible.builtin.user:
-        name: anal
+        name: analytics_user
         state: present
         group: analytics
         uid: 1051
